@@ -6,7 +6,8 @@
                      [walk :refer [prewalk]]]
             [clojure.tools.logging :refer [info warn]]
             [clojure.java.io :as io])
-  (:import (com.aphyr.hegel_clj LimitInputStream)
+  (:import (clojure.lang ExceptionInfo)
+           (com.aphyr.hegel_clj LimitInputStream)
            (java.io ByteArrayInputStream
                     ByteArrayOutputStream
                     DataInputStream
@@ -17,7 +18,8 @@
                     OutputStream)
            (java.nio ByteBuffer)
            (java.nio.charset StandardCharsets)
-           (java.util.concurrent CompletableFuture)
+           (java.util.concurrent CompletableFuture
+                                 ExecutionException)
            (java.util.zip CRC32)))
 
 (def core-version
@@ -45,6 +47,11 @@
   "Terminator."
   (unchecked-byte 0x0a))
 
+(def ^:dynamic *final-case?*
+  "This dynamic variable is bound to true when we're executing a final test
+  case."
+  false)
+
 ; Coercing between Clojure and Hegel names
 
 (defn snake-case-str
@@ -55,7 +62,7 @@
 (defn kebab-case-kw
   "Converts underscored strings to kebab-case keywords."
   [s]
-  (str/replace (name s) #"_" "-"))
+  (keyword (str/replace (name s) #"_" "-")))
 
 (defn clj->hegel
   "Converts an idiomatic Clojure data structure into a Hegel one. Turns
@@ -119,6 +126,70 @@
 
 ;; The hegel-core state machine
 
+; In order to understand this design, you have to know a little about how
+; Hegel's protocol works. There's a complex back-and-forth dance between client
+; and server: sometimes the client drives, sometimes the server drives, and
+; they shift between several streams in doing so. We also want to support
+; concurrent execution of tests.
+;
+; There are three levels of streams: the control, the test run, and the test
+; case stream. These work like so:
+;
+; client <- -> server
+;
+; | Control            | Test run            | Test case 1
+; |--------------------|---------------------|---------------------------
+; |         run_test-> |                     |
+; | <-run_test_reply   |                     |
+; |                    | <-test_case         |
+; |                    |   test_case_reply-> |
+; |                    |                     |               command->
+; |                    |                     | <-command_reply
+; |                    |                     |       ...
+; |                    |                     |         mark_complete->
+; |                    |                     | <-mark_complete_reply
+; |                    |                     |          stream_close->
+;                             ...
+; |                    | <-test_done         |
+; |                    |   test_done_reply-> |
+; |                    | <-test_case         | Test case n
+; |                    |   test_case_reply-> |--------------------------
+; |                    |                     |               command->
+; |                    |                     | <-command_reply
+; |                    |                     |       ...
+; |                    |                     |         mark_complete->
+; |                    |                     | <-mark_complete_reply
+; |                    |                     |          stream_close->
+;
+; Note that the control stream is driven by the client, the test run stream is
+; driven by the server, and the test case stream is driven by the client again.
+; At least, this is what I infer from Hegel's protocol docs!
+;
+; Because our test cases might (?) be concurrent, we run a single *reader
+; thread* which reads messages off of the stream, parses their headers, and
+; dispatches them to the right place. The reader dispatches messages in two
+; ways:
+;
+; 1. For RPC calls, the caller registers a CompletableFuture in a map, and
+;    the reder delivers its response payload to that future.
+;
+; 2. For the test run stream, each test_case message spawns a virtual thread,
+;    which evaluates that test case. I'm doing this assuming that
+;    Hegel might parallelize test case evaluation, and if not, it probably
+;    won't hurt much? Alternatively, we can spawn a single thread to handle all
+;    test cases, and hand off messages to it using a queue.
+;
+; The control stream is always 0; the test run stream is always odd, and the
+; test case stream is always even. This follows from the even/odd convention
+; for client/server generated streams.
+;
+; Note that test_done does NOT mean that the test is done! It means that we're
+; transitioning to a final phase in which Hegel repeats the minimal failing
+; cases. The idea is that now is the time to turn on extra logging so you can
+; debug those shorter versions. We need to track the state from test_done and
+; wait for the right number of final test cases to arrive before returning to
+; the caller.
+
 (declare send!)
 
 (defrecord Core [^Process process
@@ -133,7 +204,7 @@
                  ; An atom to a map of client stream IDs to the next message ID
                  ; for each
                  next-message-ids
-                 ; An atom mapping stream ids to functions which handle new
+                 ; An atom mapping stream ids to threads which handle new
                  ; requests from the server
                  stream-handlers
                  ; An atom mapping stream ids to maps of message IDs we sent to
@@ -173,6 +244,16 @@
   "Computes the response message ID for a given request message ID."
   (^long [^long request-id]
          (bit-or Integer/MIN_VALUE request-id)))
+
+(defn friendly-message-id
+  "It's a pain to try and do twos-complement bit arithmatic in one's head to
+  map between request and reply IDs. This prints a friendly string for a
+  message ID, either '123' for a request, or 'r123' for the corresponding
+  reply."
+  [^long id]
+  (if (neg? id)
+     (str "r" (request-message-id id))
+     (str id)))
 
 (declare handshake! crash-core! reader!)
 
@@ -380,6 +461,19 @@
     :write-handlers cbor/default-write-handlers
     :read-handlers  cbor/default-read-handlers))
 
+(defn error-type
+  "Errors are maps with an 'error' key, which is a meaningless, unstable
+  integer (!?), and a 'type' key (e.g. 'StopTest'), which is useful. Returns
+  the type of an error as a qualified keyword ala ::hegel-clj/stop-test,  else
+  nil."
+  [payload]
+  (when (and (map? payload) (contains? payload "error"))
+    (let [type (payload "type")]
+      ; Not sure how far down this road I want to go; for now let's enumerate.
+      (case type
+        "StopTest" :hegel-clj/stop-test
+        (keyword "hegel-clj" type)))))
+
 (defn read-loop!
   "Reads packets from the inputstream, dispatching them. Takes a Core."
   [^Core core]
@@ -461,7 +555,7 @@
                                  :expected pkt-checksum
                                  :actual   checksum})))]
 
-        (info "Receive" :stream-id stream-id :message-id message-id
+        (info "Receive" stream-id (friendly-message-id message-id)
               (pr-str payload))
 
         (if (neg? message-id)
@@ -469,12 +563,13 @@
           (let [rid (request-message-id message-id )]
             (if-let [^CompletableFuture p (-> @replies (get stream-id) (get rid))]
               ; Deliver promise
-              (do (if (and (map? payload)
-                           (payload "error"))
+              (do (if-let [type (error-type payload)]
                     ; This is an error message
-                    (.completeExceptionally p (ex-info (str "Hegel-core error: "
-                                                            (payload "type"))
-                                                       payload))
+                    (.completeExceptionally
+                      p (ex-info (str "Hegel-core error: " (payload "type"))
+                                 {:stream-id          stream-id
+                                  :request-message-id rid
+                                  :type               type}))
                     (.complete p payload))
                   ; We don't need to track this any more
                   (swap! replies update stream-id dissoc rid))
@@ -487,7 +582,8 @@
                                :replies    @replies
                                }))))
 
-          ; Otherwise, invoke a stream handler.
+          ; Otherwise, this must be a test case; we spawn a fresh thread to
+          ; handle it.
           (if-let [handler (get @stream-handlers stream-id)]
             (vthread "hegel-clj handler"
               (handler (CborPacket. stream-id message-id payload)))
@@ -517,9 +613,10 @@
   "Sends an IPacket to Hegel core."
   [^Core core packet]
   (let [raw-packet (->raw-packet packet)
-        os  (.out core)
+        os  ^OutputStream (.out core)
         buf (raw-packet->buf raw-packet)]
-    (info "Send" (pr-str packet)
+    (info "Send" (:stream-id packet) (friendly-message-id (:message-id packet))
+          (pr-str (:payload packet))
           #_"\n" #_(with-out-str (bs/print-bytes buf)))
     (locking os
       (.write os (.array buf))
@@ -546,11 +643,17 @@
 (defn close-stream!
   "Closes a stream on the given core. Returns core."
   [^Core core stream-id]
-  (send! core (RawPacket. stream-id
-                          Integer/MAX_VALUE
-                          (.. (ByteBuffer/allocate 1)
-                              (put (unchecked-byte 0xfe))
-                              (position 0))))
+  (info "Closing stream" stream-id)
+  (try
+    (send! core (RawPacket. stream-id
+                            Integer/MAX_VALUE
+                            (.. (ByteBuffer/allocate 1)
+                                (put (unchecked-byte 0xfe))
+                                (position 0))))
+    (catch IOException e
+      (when (= "Stream Closed" (.getMessage e))
+        ; Fine; we're probably racing to shut things down
+        )))
   (swap! (.next-message-ids core) dissoc stream-id)
   (swap! (.stream-handlers core) dissoc stream-id)
   (swap! (.replies core) dissoc stream-id)
@@ -582,60 +685,141 @@
     (assert (= (str "Hegel/" core-version-string) res))
     res))
 
-(defn handle-test-case!
-  "Called when we get a test-case command from the core."
-  [core case-fn ^CompletableFuture results req]
-  (let [payload (:payload req)
-        event   (payload "event")]
-    (if-let [error (payload "error")]
-      (do (info "Hegel returned error" payload)
-          (.completeExceptionally results
-                                  (ex-info "Hegel error"
-                                           payload)))
+(defn maybe-finish-test!
+  "Called when we might be done with a test. If the final countdown is zero,
+  delivers the results of tmp-results to results, and closes the test
+  stream."
+  [core test-stream-id final-countdown tmp-results ^CompletableFuture results]
+  (info "Checking if we can finish" final-countdown)
+  (when (= 0 @final-countdown)
+    (.complete results @tmp-results)
+    (close-stream! core test-stream-id)))
+
+(defn run-test-case!
+  "Called when we get a test-case command from the core. Acknowledges the
+  test-case command, invokes case-fn to perform the test case, and sends
+  results back to the server.
+
+  `core`      The Hegel client core.
+  `test-stream-id`  A stream ID for this test run
+  `case-fn`         A function (case-fn stream-id) which runs a single test
+                    case.
+  `final-countdown` An atom with the number of final test cases (those which
+                    occur after the test_done message) we have yet to process.
+  `tmp-results`     A promise where we store the result map during
+                    the final test cases.
+  `results`         A CompletableFuture which receives the result map once the
+                    final test cases are complete. This is what the caller
+                    blocks on.
+  `req` The request CborPacket we're processing."
+  [core test-stream-id case-fn final-countdown tmp-results
+   ^CompletableFuture results req]
+  (let [payload    (:payload req)
+        event      (payload "event")
+        error-type (error-type payload)]
+    (case error-type
+      ; Not an error
+      nil
       (case event
         "test_case"
         (do (info "Starting test case")
             (reply! core req {"result" nil})
-            (let [stream-id (payload "stream_id")]
+            (let [stream-id (payload "stream_id")
+                  is-final? (payload "is_final")]
               (assert (integer? stream-id))
               (open-stream! core stream-id)
               (try
                 ; Actually run case
-                (let [res (case-fn stream-id)]
-                  ; Validate case result
-                  (assert (map? res))
-                  (assert (:status res))
-                  ; And mark case as completed
-                  @(rpc! core
-                         (CborPacket. stream-id (gen-message-id! core stream-id)
-                                      (cond-> {"command" "mark_complete"
-                                               "status"  (case (:status res)
-                                                           :valid "VALID"
-                                                           :invalid "INVALID"
-                                                           :interesting "INTERESTING")}
-                                        (identical? :interesting (:status res))
-                                        (assoc "origin" (:origin res))))))
+                (let [res (if is-final?
+                            (binding [*final-case?* true]
+                              (case-fn stream-id))
+                            (case-fn stream-id))
+                      ; Validate case result
+                      _ (assert (map? res))
+                      _ (assert (:status res))
+                      ; And mark case as completed
+                      payload (cond-> {"command" "mark_complete"
+                                       "status"  (case (:status res)
+                                                   :valid "VALID"
+                                                   :invalid "INVALID"
+                                                   :interesting "INTERESTING")}
+                                (identical? :interesting (:status res))
+                                (assoc "origin" (:origin res)))
+                      req (CborPacket. stream-id
+                                       (gen-message-id! core stream-id)
+                                       payload)
+                      res (rpc! core req)]
+                  ; If we're in the final countdown, we should decrement.
+                  (when is-final?
+                    (swap! final-countdown
+                           (fn countdown [c]
+                             (if c
+                               (dec c)
+                               c)))
+                    ; And we may be ready to return to the top-level test caller
+                    (maybe-finish-test!
+                      core test-stream-id final-countdown tmp-results results))
+                  ; Check the reply for our mark_complete message
+                  (try @res
+                       ; I don't think Hegel ever sends the documented
+                       ; mark_complete_reply message; instead it seems to
+                       ; *only* send StopTest errors back. Ughghhgg...
+                       (catch ExecutionException e
+                         (let [cause (.getCause e)]
+                           (when-not (identical? :hegel-clj/stop-test
+                                                 (:type (ex-data cause)))
+                             (throw e))))))
                 (finally
                   (close-stream! core stream-id)))))
 
-        ; Fun fact: this does not mean the test is done. It's going to keep
-        ; sending us test cases!
+        ; Fun fact: this does not mean the test is done. It means the start of
+        ; a final phase, where the test replays `interesting_test_cases` cases.
+        ; We can't return until this is done, so we need to squirrel away the
+        ; test results, and count down as those tests are replayed.
         "test_done"
-        (do (info "Test done.")
+        (do (info "Final test phase")
+            ; Save the results that *will* be delivered later
             (let [r (payload "results")]
-              (.complete results
-                         {:passed?                (r "passed")
-                          :test-cases             (r "test_cases")
-                          :valid-test-cases       (r "valid_test_cases")
-                          :invalid-test-cases     (r "invalid_test_cases")
-                          :interesting-test-cases (r "interesting_test_cases")
-                          ; Not sure what these byte arrays are
-                          ;:failure-blobs          (r "failure_blobs")
-                          :seed                   (r "seed")
-                          :flaky?                 (r "flaky")
-                          :health-check-failure?  (r "health_check_failure")
-                          :error                  (r "error")}))
-            (reply! core req {"result" true}))))))
+              (deliver tmp-results
+                       {:passed?                (r "passed")
+                        :test-cases             (r "test_cases")
+                        :valid-test-cases       (r "valid_test_cases")
+                        :invalid-test-cases     (r "invalid_test_cases")
+                        :interesting-test-cases (r "interesting_test_cases")
+                        ; Not sure what these byte arrays are
+                        ;:failure-blobs          (r "failure_blobs")
+                        :seed                   (r "seed")
+                        :flaky?                 (r "flaky")
+                        :health-check-failure?  (r "health_check_failure")
+                        :error                  (r "error")})
+              ; Set up the countdown
+              (let [c (r "interesting_test_cases")]
+                (assert (and (integer? c) (not (neg? c)))
+                        (str "Expected interesting_test_cases to be non-negative" (pr-str r)))
+
+                (reset! final-countdown c)
+                (info "Final countdown is" final-countdown))
+              ; And ack
+              (reply! core req {"result" true})
+              ; If we found nothing interesting, we may return final results now
+              (maybe-finish-test! core test-stream-id final-countdown
+                                       tmp-results results))))
+
+      ; This isn't really an error, but normal termination. AFAICT the
+      ; protocol documentation is wrong: you'll *never* get a
+      ; mark_complete_reply in response to mark_complete. Instead the server
+      ; sends a StopTest error, which isn't really an error; it just means
+      ; we're done. Nor does it mean the test is done--it actually means the
+      ; test *case* is done. All we have to do is close the stream.
+      ; ::stop-test
+      ; (close-stream! core test-stream-id)
+
+      ; Any other error we'll bubble up as an exception on the caller.
+      (do (.completeExceptionally results
+                                  (ex-info (str "Hegel error: " error-type)
+                                           {:type ::hegel-error
+                                            :hegel-type error-type}))
+           (close-stream! core test-stream-id)))))
 
 (defn run-test!
   "Sends a run-test command. Options are:
@@ -660,21 +844,23 @@
      :origin \"...\"}"
   [core opts case-fn]
   (info "run-test!")
-  (let [stream-id (open-stream! core)
-        ; Register a handler for this stream
-        results (CompletableFuture.)
+  (let [stream-id       (open-stream! core)
+        final-countdown (atom nil)
+        tmp-results     (promise)
+        results         (CompletableFuture.)
         _ (register-stream-handler! core stream-id
-                                    (partial handle-test-case!
-                                             core case-fn
-                                             results))
-        _ (rpc! core (CborPacket. control-stream-id
-                                     (gen-message-id! core control-stream-id)
-                                     (-> opts
-                                         (update- :suppress-health-check
-                                                  (partial mapv snake-case-str))
-                                         (update-keys snake-case-str)
-                                         (assoc "command" "run_test"
-                                                "stream_id" stream-id))))]
+                                    (partial run-test-case! core stream-id
+                                             case-fn final-countdown tmp-results
+                                             results))]
+    ; Kick off test
+    @(rpc! core (CborPacket. control-stream-id
+                             (gen-message-id! core control-stream-id)
+                             (-> opts
+                                 (update- :suppress-health-check
+                                          (partial mapv snake-case-str))
+                                 (update-keys snake-case-str)
+                                 (assoc "command" "run_test"
+                                        "stream_id" stream-id))))
     @results))
 
 (defn generate!

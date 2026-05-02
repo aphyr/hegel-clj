@@ -1,15 +1,1 @@
 Reader loop exiting: ConnectionClosedError: Connection closed
-Traceback (most recent call last):
-  File "/home/aphyr/.cache/uv/archive-v0/yZZ7EGumzze7tXSlDxBMH/lib/python3.12/site-packages/hegel/server.py", line 571, in _run_test
-    final_state.test_function(ConjectureData.for_choices(choices))
-  File "/home/aphyr/.cache/uv/archive-v0/yZZ7EGumzze7tXSlDxBMH/lib/python3.12/site-packages/hegel/server.py", line 192, in test_function
-    ).get()
-      ^^^^^
-  File "/home/aphyr/.cache/uv/archive-v0/yZZ7EGumzze7tXSlDxBMH/lib/python3.12/site-packages/hegel/protocol/stream.py", line 40, in get
-    packet = self.__stream.read_reply(self.__message_id)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/aphyr/.cache/uv/archive-v0/yZZ7EGumzze7tXSlDxBMH/lib/python3.12/site-packages/hegel/protocol/stream.py", line 203, in read_reply
-    self.__read_one_packet(timeout=timeout)
-  File "/home/aphyr/.cache/uv/archive-v0/yZZ7EGumzze7tXSlDxBMH/lib/python3.12/site-packages/hegel/protocol/stream.py", line 125, in __read_one_packet
-    raise ConnectionError("Connection closed")
-ConnectionError: Connection closed

@@ -13,4 +13,6 @@
   :java-source-paths ["src"]
   :profiles {:dev {:dependencies [
                                   [org.slf4j/slf4j-simple "2.0.17"]
-                                  ]}})
+                                  ]}}
+  :test-selectors {:default (constantly true)
+                   :focus :focus})

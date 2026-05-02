@@ -1,7 +1,8 @@
 (ns com.aphyr.hegel-clj.client-test
   (:require [clojure.test :refer :all]
             [clojure.tools.logging :refer [info warn]]
-            [com.aphyr.hegel-clj.client :refer :all])
+            [com.aphyr.hegel-clj [client :refer :all]
+                                 [test :refer :all]])
   (:import (java.nio ByteBuffer)))
 
 (deftest serde-test
@@ -27,7 +28,7 @@
                        (info :generate (generate! core stream-id {"type" "integer"}))
                        {:status :valid})))))
 
-(deftest bad-add-test
+(deftest ^:focus bad-add-test
   ; This is a bad version of addition which is only correct for addends up to
   ; three.
   (let [bad+ (fn [a b]
@@ -39,7 +40,7 @@
                      (fn [stream-id]
                        (let [a (generate! core stream-id {"type" "integer"})
                              b (generate! core stream-id {"type" "integer"})]
-                         (prn :a a :b b)
+                         (finfo :a a :b b)
                          (if (= (+ a b) (bad+ a b))
                            {:status :valid}
                            {:status :interesting
