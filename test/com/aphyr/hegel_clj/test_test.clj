@@ -18,7 +18,6 @@
          (run-test! {:seed 1}
                     (g/let [a (gen (g/integer))
                             b (gen (g/integer))]
-                      (fpprint {:a a :b b})
                       (if (not= (+ a b) (+ a (max b 3)))
                         {:status :interesting
                          :origin "bad+"}

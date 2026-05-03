@@ -6,8 +6,10 @@
   arities.
 
   See https://hegel.dev/reference/protocol#schemas for details."
-  (:refer-clojure :exclude [boolean let])
-  (:require [clojure.core :as c]))
+  (:refer-clojure :exclude [boolean let float])
+  (:require [clojure [core :as c]
+                     [walk :refer [prewalk]]]))
+
 
 ; We *could* represent schemas as maps, but having a special datatype lets us
 ; do (gen/let [x 1, y (gen/integer)].
@@ -34,15 +36,17 @@
   options map, rewriting keys using rewrite-pairs."
   [type hegel-opts clj-opts & rewrite-pairs]
   (assert (even? (count rewrite-pairs)))
-  (c/let [map-sym (gensym 'm)]
+  (c/let [map-sym (gensym 'm)
+          v-sym   (gensym 'v)]
     `(c/let [~map-sym (transient ~hegel-opts)
-           ~@(mapcat (fn [[clojure-name hegel-name]]
-                       `[~map-sym
-                         (c/let [v# (get ~map-sym ~clojure-name ::not-found)]
-                           (if (identical? ::not-found v#)
-                             ~map-sym
-                             (assoc! ~map-sym ~hegel-name v#)))])
-                     (partition 2 rewrite-pairs))]
+             ~@(mapcat (fn [[clojure-name hegel-name]]
+                         `[~map-sym
+                           (c/let [~v-sym (get ~clj-opts ~clojure-name
+                                               ::not-found)]
+                             (if (identical? ::not-found ~v-sym)
+                               ~map-sym
+                               (assoc! ~map-sym ~hegel-name ~v-sym)))])
+                       (partition 2 rewrite-pairs))]
        (schema* ~type (persistent! ~map-sym)))))
 
 (defn constant
@@ -55,7 +59,11 @@
   pairs, where `index` is the index of the generator which was used, and
   `value` is the value it produced."
   [& gens]
-  (schema* "one_of" {"generators" gens}))
+  ; Maybe a bit of a hack, but for the recursive generators I think it's
+  ; actually easier to coerce schemas to maps here, rather than walking them
+  ; later. They're getting coerced either way, and all we care about is the
+  ; top-level wrapper.
+  (schema* "one_of" {"generators" (mapv schema->map gens)}))
 
 (defn boolean
   "Generates a boolean."
@@ -69,10 +77,44 @@
       :max    Minimum value, inclusive"
   ([]
    (schema* "integer" {}))
-  ([{:keys [min max]}]
+  ([opts]
    (schema "integer" {} opts
             :min "min_value"
             :max "max_value")))
+
+(defn float
+  "Generates a floating-point number. Options:
+
+      :min          Minimum value
+      :max          Maximum value (ditto)
+      :exclude-min? Exclude the minimum value
+      :exclude-max? Exclude the maximum value
+      :nan?         Whether to allow NaNs
+      :infinity?    Whether to allow infinity
+      :width        Bit width: 32 or 64"
+  ([]
+   (schema* "float" {}))
+  ([opts]
+   (schema "float" {} opts
+           :min "min_value"
+           :max "max_value"
+           :exclude-min? "exclude_min"
+           :exclude-max? "exclude_max"
+           :nan?         "allow_nan"
+           :infinity?    "allow_infinity"
+           :width        "width")))
+
+(defn string
+  "Generates a Unicode string. Options:
+
+  :min-size     Minimum size, in code points
+  :max-size     Maximum size, in code points"
+  ([]
+   (schema* "string" {}))
+  ([opts]
+   (schema "string" {} opts
+           :min-size "min_size"
+           :max-size "max_size")))
 
 (defmacro let
   "Like Clojure's let, but when a right-hand side is a generator, draws a value

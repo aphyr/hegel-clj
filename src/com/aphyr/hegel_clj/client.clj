@@ -463,11 +463,18 @@
                          :expected terminator
                          :actual   b}))))))
 
+(defn cbor-read-string
+  "Reads a string, whose payload is UTF-8, but with surrogate code points
+  allowed."
+  [^bytes b]
+  (.toString (.decode StandardCharsets/UTF_8 (ByteBuffer/wrap b))))
+
 (def cbor-codec
   "Our custom CBOR codec"
   (cbor/cbor-codec
     :write-handlers cbor/default-write-handlers
-    :read-handlers  cbor/default-read-handlers))
+    :read-handlers  (merge cbor/default-read-handlers
+                           {91 cbor-read-string})))
 
 (defn error-type
   "Errors are maps with an 'error' key, which is a meaningless, unstable
@@ -590,14 +597,15 @@
                                :replies    @replies
                                }))))
 
-          ; Otherwise, this must be a test case; we spawn a fresh thread to
-          ; handle it.
+          ; Otherwise, this must be a server-sent command; we spawn a fresh
+          ; thread to handle it.
           (if-let [handler (get @stream-handlers stream-id)]
             (vthread "hegel-clj handler"
                      (try
                        (handler (CborPacket. stream-id message-id payload))
                        (catch Throwable e
-                         (warn e "Uncaught exception in hegel-clj stream handler"))))
+                         (warn e "Uncaught exception in hegel-clj stream handler")
+                         (stop-core! core))))
 
             (throw (ex-info "No handler for stream"
                             {:type       ::no-stream-handler
@@ -740,8 +748,12 @@
                            {:status :invalid}
                            (throw e)))))
             ; Validate case result
-            _ (assert (map? res))
-            _ (assert (:status res))
+            _ (when (not (and (map? res)
+                              (keyword (:status res))))
+                         (throw (ex-info
+                                  "Test cases should return a map with a :status value"
+                                  {:type :malformed-test-case-return-value
+                                   :return-value res})))
             ; And mark case as completed
             payload (cond-> {"command" "mark_complete"
                              "status"  (case (:status res)
