@@ -2,7 +2,7 @@
   (:require [clojure.test :refer :all]
             [clojure.tools.logging :refer [info warn]]
             [com.aphyr.hegel-clj [client :refer :all]
-                                 [test :refer :all]])
+                                 [gen :as g]])
   (:import (java.nio ByteBuffer)))
 
 (deftest serde-test
@@ -22,29 +22,40 @@
 
 (deftest run-test-test
   (with-core core
-    (info :test-results
-          (run-test! core {:test-cases 2}
-                     (fn [stream-id]
-                       (info :generate (generate! core stream-id {"type" "integer"}))
-                       {:status :valid})))))
+    (is (= {:health-check-failure? nil,
+            :seed "6",
+            :invalid-test-cases 0,
+            :test-cases 2,
+            :flaky? nil,
+            :passed? true,
+            :valid-test-cases 2,
+            :error nil,
+            :interesting-test-cases 0}
+           (run-test! core {:test-cases 2
+                            :seed 6}
+                      (fn [stream-id]
+                        (generate! core stream-id (g/integer))
+                        {:status :valid}))))))
 
-(deftest ^:focus bad-add-test
+(deftest bad-add-test
   ; This is a bad version of addition which is only correct for addends up to
   ; three.
   (let [bad+ (fn [a b]
                (+ (min a 3) (min b 3)))
         test-results
+        (try
         (with-core core
           (run-test! core {:test-cases 2
                            :seed "123"}
                      (fn [stream-id]
-                       (let [a (generate! core stream-id {"type" "integer"})
-                             b (generate! core stream-id {"type" "integer"})]
-                         (finfo :a a :b b)
+                       (let [a (generate! core stream-id (g/integer))
+                             b (generate! core stream-id (g/integer))]
                          (if (= (+ a b) (bad+ a b))
                            {:status :valid}
                            {:status :interesting
-                            :origin "bad+"})))))]
+                            :origin "bad+"})))))
+        (catch Throwable t
+          (warn t "Oh fuck")))]
     (is (= {:health-check-failure? nil,
             :seed "123",
             :invalid-test-cases 0,

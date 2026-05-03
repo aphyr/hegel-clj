@@ -1,0 +1,25 @@
+(ns com.aphyr.hegel-clj.test-test
+  (:require [clojure.test :refer :all]
+            [clojure.tools.logging :refer [info warn]]
+            [com.aphyr.hegel-clj [gen :as g]
+                                 [test :refer :all]])
+  (:import (java.nio ByteBuffer)))
+
+(deftest simple-test
+  (is (= {:health-check-failure? nil,
+          :seed "1",
+          :invalid-test-cases 0,
+          :test-cases 11,
+          :flaky? nil,
+          :passed? false,
+          :valid-test-cases 6,
+          :error nil,
+          :interesting-test-cases 1}
+         (run-test! {:seed 1}
+                    (g/let [a (gen (g/integer))
+                            b (gen (g/integer))]
+                      (fpprint {:a a :b b})
+                      (if (not= (+ a b) (+ a (max b 3)))
+                        {:status :interesting
+                         :origin "bad+"}
+                        {:status :valid}))))))

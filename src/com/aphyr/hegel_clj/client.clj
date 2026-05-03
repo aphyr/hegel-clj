@@ -5,7 +5,8 @@
             [clojure [string :as str]
                      [walk :refer [prewalk]]]
             [clojure.tools.logging :refer [info warn]]
-            [clojure.java.io :as io])
+            [clojure.java.io :as io]
+            [com.aphyr.hegel-clj.gen :as gen])
   (:import (clojure.lang ExceptionInfo)
            (com.aphyr.hegel_clj LimitInputStream)
            (java.io ByteArrayInputStream
@@ -84,6 +85,13 @@
                (update-keys x kebab-case-kw)
                x))
            x))
+
+(defn default
+  "Provides a default for a map."
+  [m k v]
+  (if (contains? m k)
+    m
+    (assoc m k v)))
 
 (defn update-
   "Like Clojure update, but only if the key exists."
@@ -855,24 +863,37 @@
 (defn run-test!
   "Sends a run-test command. Options are:
 
-  :test-cases     The number of test cases to run
-  :seed           A random seed
-  :derandomize    If true, and seed is not set, derives a determinstic seed from
-                  database-key
-  :database-key   A stable database key for this test
-  :database       A path to the DB directory
-  :suppress-health-check  A vector of health check keywords to suppress: any of
-                          :test-cases-too-large, :filter-too-much, :too-slow,
-                          :large-initial-test-case
+      :test-cases     The number of test cases to run (default 100)
+      :seed           A random seed
+      :derandomize    If true, and seed is not set, derives a determinstic
+                      seed from database-key
+      :database-key   A stable database key for this test
+      :database       A path to the DB directory
+      :suppress-health-check  A vector of health check keywords to suppress:
+                              any of :test-cases-too-large, :filter-too-much,
+                              :too-slow, :large-initial-test-case
 
-  `(case-fn stream-id) will be invoked whenever Hegel requests a test
-  case. This function's job is to make various calls to (e.g.) generate!, and
-  return a test case result, which should be one of:
+  Takes a function `(case-fn)` which will be invoked approximately `test-cases`
+  times, with zero arguments. This function can generate values and should
+  return a map which explains whether the case was valid or not:
 
-    {:status :valid}
-    {:status :invalid}
-    {:status :interesting
-     :origin \"...\"}"
+      {:status :valid}
+      {:status :invalid}
+      {:status :interesting
+       :origin \"...\"}
+
+  Returns a map describing the results of the test, of the form:
+
+      :passed?                Did all tests pass?)
+      :test-cases             How many test cases were executed?
+      :valid-test-cases       How many of them were valid
+      :invalid-test-cases     How many of them were invalid
+      :interesting-test-cases How many of them were interesting (e.g. a bug)
+      :seed                   The random seed used
+      :flaky?                 Hegel thought this test was non-deterministic
+      :health-check-failure?  Did a health check fail during the test?
+
+  May also throw an exception map like {:type :hegel-error, :message \"...\"}."
   [core opts case-fn]
   (let [stream-id       (open-stream! core)
         final-countdown (atom nil)
@@ -881,25 +902,32 @@
         _ (register-stream-handler! core stream-id
                                     (partial run-test-handler! core stream-id
                                              case-fn final-countdown tmp-results
-                                             results))]
-    ; Kick off test
-    @(rpc! core (CborPacket. control-stream-id
-                             (gen-message-id! core control-stream-id)
-                             (-> opts
-                                 (update- :suppress-health-check
-                                          (partial mapv snake-case-str))
-                                 (update-keys snake-case-str)
-                                 (assoc "command" "run_test"
-                                        "stream_id" stream-id))))
-    @results))
+                                             results))
+        ; Kick off test
+        opts (-> opts
+                 (default :test-cases 100)
+                 (update- :suppress-health-check
+                          (partial mapv snake-case-str))
+                 (update-keys snake-case-str)
+                 (assoc "command" "run_test"
+                        "stream_id" stream-id))
+        _ @(rpc! core (CborPacket. control-stream-id
+                                     (gen-message-id! core control-stream-id)
+                                     opts))
+        r @results]
+    (when-let [err (:error r)]
+      (throw (ex-info (str "Hegel error: " err)
+                      {:type :hegel-error
+                       :message err})))
+    r))
 
 (defn generate!
-  "Asks a core to generate a value. See the schema definition at
-  https://hegel.dev/reference/protocol#schemas"
+  "Asks a core to generate a value. Takes a Core, stream id, and a Schema from
+  hegel-clj.gen."
   [core stream-id schema]
   (-> core
       (rpc! (CborPacket. stream-id (gen-message-id! core stream-id)
                          {"command" "generate"
-                          "schema"  schema}))
+                          "schema"  (gen/schema->map schema)}))
       deref
       (get "result")))
