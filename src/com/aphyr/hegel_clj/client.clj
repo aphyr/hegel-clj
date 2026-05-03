@@ -555,8 +555,8 @@
                                  :expected pkt-checksum
                                  :actual   checksum})))]
 
-        (info "Receive" stream-id (friendly-message-id message-id)
-              (pr-str payload))
+        ;(info "Receive" stream-id (friendly-message-id message-id)
+        ;      (pr-str payload))
 
         (if (neg? message-id)
           ; Deliver replies to futures
@@ -586,7 +586,11 @@
           ; handle it.
           (if-let [handler (get @stream-handlers stream-id)]
             (vthread "hegel-clj handler"
-              (handler (CborPacket. stream-id message-id payload)))
+                     (try
+                       (handler (CborPacket. stream-id message-id payload))
+                       (catch Throwable e
+                         (warn e "Uncaught exception in hegel-clj stream handler"))))
+
             (throw (ex-info "No handler for stream"
                             {:type       ::no-stream-handler
                              :stream-id  stream-id
@@ -615,9 +619,9 @@
   (let [raw-packet (->raw-packet packet)
         os  ^OutputStream (.out core)
         buf (raw-packet->buf raw-packet)]
-    (info "Send" (:stream-id packet) (friendly-message-id (:message-id packet))
-          (pr-str (:payload packet))
-          #_"\n" #_(with-out-str (bs/print-bytes buf)))
+    ;(info "Send" (:stream-id packet) (friendly-message-id (:message-id packet))
+    ;      (pr-str (:payload packet))
+    ;      #_"\n" #_(with-out-str (bs/print-bytes buf)))
     (locking os
       (.write os (.array buf))
       (.flush os)))
@@ -643,7 +647,7 @@
 (defn close-stream!
   "Closes a stream on the given core. Returns core."
   [^Core core stream-id]
-  (info "Closing stream" stream-id)
+  ;(info "Closing stream" stream-id)
   (try
     (send! core (RawPacket. stream-id
                             Integer/MAX_VALUE
@@ -690,15 +694,120 @@
   delivers the results of tmp-results to results, and closes the test
   stream."
   [core test-stream-id final-countdown tmp-results ^CompletableFuture results]
-  (info "Checking if we can finish" final-countdown)
   (when (= 0 @final-countdown)
     (.complete results @tmp-results)
     (close-stream! core test-stream-id)))
 
 (defn run-test-case!
-  "Called when we get a test-case command from the core. Acknowledges the
-  test-case command, invokes case-fn to perform the test case, and sends
-  results back to the server.
+  "Part of run-test!. Same arguments; this part handles a test_case command
+  from the server. Acknowledges the test-case command, invokes case-fn to
+  perform the test case, and sends results back to the server."
+  [core test-stream-id case-fn final-countdown tmp-results
+   ^CompletableFuture results ^CborPacket req]
+  (reply! core req {"result" nil})
+  (let [payload   (.payload req)
+        stream-id (payload "stream_id")
+        is-final? (payload "is_final")]
+    (assert (integer? stream-id)
+            (str "No stream_id for message " (pr-str req)))
+    (open-stream! core stream-id)
+    (try
+      ; Actually run case
+      (let [res (try (if is-final?
+                       (binding [*final-case?* true]
+                         (case-fn stream-id))
+                       (case-fn stream-id))
+                     (catch ExecutionException e
+                       (if-let [cause (.getCause e)]
+                         (if (and (instance? ExceptionInfo cause)
+                                  (identical? :hegel-clj/stop-test
+                                              (:type (ex-data cause))))
+                           ; Hegel-core sometimes returns a StopTest error in
+                           ; the middle of a test case when we (e.g.) ask it to
+                           ; generate an integer. I am pretty sure this is a
+                           ; bug? I don't know how to respond to this either,
+                           ; because, like... we can't mark it as VALID or
+                           ; INTERESTING, since the test case didn't actually
+                           ; *run* to completion. I'm going to guess INVALID?
+                           {:status :invalid}
+                           (throw e)))))
+            ; Validate case result
+            _ (assert (map? res))
+            _ (assert (:status res))
+            ; And mark case as completed
+            payload (cond-> {"command" "mark_complete"
+                             "status"  (case (:status res)
+                                         :valid "VALID"
+                                         :invalid "INVALID"
+                                         :interesting "INTERESTING")}
+                      (identical? :interesting (:status res))
+                      (assoc "origin" (:origin res)))
+            req (CborPacket. stream-id
+                             (gen-message-id! core stream-id)
+                             payload)
+            res (rpc! core req)]
+        ; If we're in the final countdown, we should decrement.
+        (when is-final?
+          (swap! final-countdown
+                 (fn countdown [c]
+                   (if c
+                     (dec c)
+                     c)))
+          ; And we may be ready to return to the top-level test caller
+          (maybe-finish-test!
+            core test-stream-id final-countdown tmp-results results))
+        ; Check the reply for our mark_complete message
+        (try @res
+             ; AFAICT the protocol documentation is wrong: you'll *never* get a
+             ; mark_complete_reply in response to mark_complete. Instead the
+             ; server sends a StopTest error, which isn't really an error; it
+             ; just means we're done. Nor does it mean the test is done--it
+             ; actually means the test *case* is done.
+             (catch ExecutionException e
+               (let [cause (.getCause e)]
+                 (when-not (identical? :hegel-clj/stop-test
+                                       (:type (ex-data cause)))
+                   (throw e))))))
+      (finally
+        (close-stream! core stream-id)))))
+
+(defn on-test-done!
+  "Part of run-test!. Same arguments; this part handles a test_done command by
+  transitioning to the final phase of the test."
+  [core test-stream-id case-fn final-countdown tmp-results
+   ^CompletableFuture results req]
+  ; Fun fact: this does not mean the test is done. It means the start of
+  ; a final phase, where the test replays `interesting_test_cases` cases.
+  ; We can't return until this is done, so we need to squirrel away the
+  ; test results, and count down as those tests are replayed.
+  ; Save the results that *will* be delivered later
+  (let [r ((:payload req) "results")]
+    (deliver tmp-results
+             {:passed?                (r "passed")
+              :test-cases             (r "test_cases")
+              :valid-test-cases       (r "valid_test_cases")
+              :invalid-test-cases     (r "invalid_test_cases")
+              :interesting-test-cases (r "interesting_test_cases")
+              ; Not sure what these byte arrays are
+              ;:failure-blobs          (r "failure_blobs")
+              :seed                   (r "seed")
+              :flaky?                 (r "flaky")
+              :health-check-failure?  (r "health_check_failure")
+              :error                  (r "error")})
+    ; Set up the countdown
+    (let [c (r "interesting_test_cases")]
+      (assert (and (integer? c) (not (neg? c)))
+              (str "Expected interesting_test_cases to be non-negative" (pr-str r)))
+
+      (reset! final-countdown c))
+    ; And ack
+    (reply! core req {"result" true})
+    ; If we found nothing interesting, we may return final results now
+    (maybe-finish-test! core test-stream-id final-countdown
+                        tmp-results results)))
+
+(defn run-test-handler!
+  "Handles messages received from the server during a test.
 
   `core`      The Hegel client core.
   `test-stream-id`  A stream ID for this test run
@@ -717,109 +826,31 @@
   (let [payload    (:payload req)
         event      (payload "event")
         error-type (error-type payload)]
+    ; TODO: I added this when fighting bizarre errors but I'm not sure it's
+    ; actually necessary. Do we *really* get errors sent as commands here?
     (case error-type
       ; Not an error
       nil
       (case event
         "test_case"
-        (do (info "Starting test case")
-            (reply! core req {"result" nil})
-            (let [stream-id (payload "stream_id")
-                  is-final? (payload "is_final")]
-              (assert (integer? stream-id))
-              (open-stream! core stream-id)
-              (try
-                ; Actually run case
-                (let [res (if is-final?
-                            (binding [*final-case?* true]
-                              (case-fn stream-id))
-                            (case-fn stream-id))
-                      ; Validate case result
-                      _ (assert (map? res))
-                      _ (assert (:status res))
-                      ; And mark case as completed
-                      payload (cond-> {"command" "mark_complete"
-                                       "status"  (case (:status res)
-                                                   :valid "VALID"
-                                                   :invalid "INVALID"
-                                                   :interesting "INTERESTING")}
-                                (identical? :interesting (:status res))
-                                (assoc "origin" (:origin res)))
-                      req (CborPacket. stream-id
-                                       (gen-message-id! core stream-id)
-                                       payload)
-                      res (rpc! core req)]
-                  ; If we're in the final countdown, we should decrement.
-                  (when is-final?
-                    (swap! final-countdown
-                           (fn countdown [c]
-                             (if c
-                               (dec c)
-                               c)))
-                    ; And we may be ready to return to the top-level test caller
-                    (maybe-finish-test!
-                      core test-stream-id final-countdown tmp-results results))
-                  ; Check the reply for our mark_complete message
-                  (try @res
-                       ; I don't think Hegel ever sends the documented
-                       ; mark_complete_reply message; instead it seems to
-                       ; *only* send StopTest errors back. Ughghhgg...
-                       (catch ExecutionException e
-                         (let [cause (.getCause e)]
-                           (when-not (identical? :hegel-clj/stop-test
-                                                 (:type (ex-data cause)))
-                             (throw e))))))
-                (finally
-                  (close-stream! core stream-id)))))
+        (run-test-case! core test-stream-id case-fn final-countdown tmp-results
+                        results req)
 
-        ; Fun fact: this does not mean the test is done. It means the start of
-        ; a final phase, where the test replays `interesting_test_cases` cases.
-        ; We can't return until this is done, so we need to squirrel away the
-        ; test results, and count down as those tests are replayed.
         "test_done"
-        (do (info "Final test phase")
-            ; Save the results that *will* be delivered later
-            (let [r (payload "results")]
-              (deliver tmp-results
-                       {:passed?                (r "passed")
-                        :test-cases             (r "test_cases")
-                        :valid-test-cases       (r "valid_test_cases")
-                        :invalid-test-cases     (r "invalid_test_cases")
-                        :interesting-test-cases (r "interesting_test_cases")
-                        ; Not sure what these byte arrays are
-                        ;:failure-blobs          (r "failure_blobs")
-                        :seed                   (r "seed")
-                        :flaky?                 (r "flaky")
-                        :health-check-failure?  (r "health_check_failure")
-                        :error                  (r "error")})
-              ; Set up the countdown
-              (let [c (r "interesting_test_cases")]
-                (assert (and (integer? c) (not (neg? c)))
-                        (str "Expected interesting_test_cases to be non-negative" (pr-str r)))
+        (on-test-done! core test-stream-id case-fn final-countdown tmp-results
+                       results req)
 
-                (reset! final-countdown c)
-                (info "Final countdown is" final-countdown))
-              ; And ack
-              (reply! core req {"result" true})
-              ; If we found nothing interesting, we may return final results now
-              (maybe-finish-test! core test-stream-id final-countdown
-                                       tmp-results results))))
-
-      ; This isn't really an error, but normal termination. AFAICT the
-      ; protocol documentation is wrong: you'll *never* get a
-      ; mark_complete_reply in response to mark_complete. Instead the server
-      ; sends a StopTest error, which isn't really an error; it just means
-      ; we're done. Nor does it mean the test is done--it actually means the
-      ; test *case* is done. All we have to do is close the stream.
-      ; ::stop-test
-      ; (close-stream! core test-stream-id)
+        ; Huh, something we didn't handle
+        (.completeExceptionally results
+                                (ex-info (str "Unknown command: " event)
+                                         payload)))
 
       ; Any other error we'll bubble up as an exception on the caller.
       (do (.completeExceptionally results
                                   (ex-info (str "Hegel error: " error-type)
                                            {:type ::hegel-error
                                             :hegel-type error-type}))
-           (close-stream! core test-stream-id)))))
+          (close-stream! core test-stream-id)))))
 
 (defn run-test!
   "Sends a run-test command. Options are:
@@ -843,13 +874,12 @@
     {:status :interesting
      :origin \"...\"}"
   [core opts case-fn]
-  (info "run-test!")
   (let [stream-id       (open-stream! core)
         final-countdown (atom nil)
         tmp-results     (promise)
         results         (CompletableFuture.)
         _ (register-stream-handler! core stream-id
-                                    (partial run-test-case! core stream-id
+                                    (partial run-test-handler! core stream-id
                                              case-fn final-countdown tmp-results
                                              results))]
     ; Kick off test
