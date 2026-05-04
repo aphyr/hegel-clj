@@ -1,31 +1,45 @@
 (ns com.aphyr.hegel-clj.gen
   "Composable generators. These functions return a *schema*, which can be used
-  with hegel-clj.test/gen to produce an actual value. These are named after,
-  and use the same option names, as the Hegel protocol, with a few
-  Clojure-style tweaks: kebab-case names, keyword arguments, and some helper
-  arities.
+  with hegel-clj.test/gen to produce an actual value. We generally follow
+  Hegel's protocol, but with a Clojure flavor: we use `vec` instead of `list`,
+  because it generates vectors, and `bytes` instead of `binary`, and so on.
+  Option names use :kebab-case keywords and the usual :flag? for boolean
+  options.
 
   See https://hegel.dev/reference/protocol#schemas for details."
-  (:refer-clojure :exclude [boolean let float])
+  (:refer-clojure :exclude [boolean bytes float let list map set vector])
   (:require [clojure [core :as c]
-                     [walk :refer [prewalk]]]))
+                     [walk :refer [prewalk]]]
+            [clojure.tools.logging :refer [info warn]])
+  (:import (clojure.lang PersistentList)
+           (java.time LocalDate
+                      LocalDateTime
+                      LocalTime)))
 
+(defprotocol Schema
+  (->map [schema]
+         "Transforms this schema into a CBOR-serializable map, so that it can be sent to Hegel-Core")
 
-; We *could* represent schemas as maps, but having a special datatype lets us
-; do (gen/let [x 1, y (gen/integer)].
-(defrecord Schema [type])
+  (post [schema value]
+        "Post-processes a generated value. This can be used to transform one
+        datatype into another, or to reject a generated value by throwing
+        :hegel-clj/invalid."))
 
-(defn schema->map
-  "Converts a Schema to a plain map, for CBOR serialization."
-  [^Schema s]
-  (assoc (.__extmap s) "type" (.type s)))
+; A basic schema. Stores the type string in `type` and other options in the
+; extmap.
+(defrecord Basic [type]
+  Schema
+  (->map [this]
+    (assoc (.__extmap this) "type" type))
+
+  (post [this x] x))
 
 (defn schema*
-  "Constructs an instance of Schema. Takes a type and a map of options which
+  "Constructs an instance of Basic. Takes a type and a map of options which
   will be passed to hegel core."
   [type m]
-  ; Defrecords have a constructor which takes fields, meta, and an extmap
-  (Schema. type nil m))
+  ; final two args are meta, extmap
+  (Basic. type nil m))
 
 (defmacro schema
   "Helper macro for constructing schemas. Takes a type string, a Hegel options
@@ -37,33 +51,69 @@
   [type hegel-opts clj-opts & rewrite-pairs]
   (assert (even? (count rewrite-pairs)))
   (c/let [map-sym (gensym 'm)
-          v-sym   (gensym 'v)]
+          v-sym   (gensym 'v)
+          ; We keep track of the keys we extract from the map, and use that
+          ; to warn if there are unrecognized options.
+          counter (gensym 'counter)
+          rewrite-pairs (partition 2 rewrite-pairs)]
     `(c/let [~map-sym (transient ~hegel-opts)
+             ~counter (volatile! 0)
              ~@(mapcat (fn [[clojure-name hegel-name]]
                          `[~map-sym
                            (c/let [~v-sym (get ~clj-opts ~clojure-name
                                                ::not-found)]
                              (if (identical? ::not-found ~v-sym)
                                ~map-sym
-                               (assoc! ~map-sym ~hegel-name ~v-sym)))])
-                       (partition 2 rewrite-pairs))]
+                               (do (vswap! ~counter inc)
+                                   (assoc! ~map-sym ~hegel-name ~v-sym))))])
+                       rewrite-pairs)]
+       (when (< @~counter (count ~clj-opts))
+         (throw (IllegalArgumentException.
+                  (str "Unexpected schema options: "
+                       (pr-str (dissoc ~clj-opts ~@(mapv first rewrite-pairs)))))))
        (schema* ~type (persistent! ~map-sym)))))
+
+(defrecord FMap [f schema]
+  Schema
+  (->map [this]
+    (->map schema))
+
+  (post [this x]
+    (f (post schema x))))
+
+(defn fmap
+  "Transforms generated values. Takes a function which takes one generated
+  value to another, and a Schema. Returns an Schema which applies f to those
+  values."
+  [f schema]
+  (FMap. f schema))
 
 (defn constant
   "Always generates `x`."
   [x]
   (schema* "constant" {"value" x}))
 
-(defn one-of
+(defrecord OneOf [gens]
+  Schema
+  (->map [this]
+    {"type" "one_of"
+     "generators" (mapv ->map gens)})
+
+  (post [this [i x]]
+    [i (post (nth gens i) x)]))
+
+(defn one-of*
   "A value drawn from one of several generators. Returns `[index, value]`
   pairs, where `index` is the index of the generator which was used, and
   `value` is the value it produced."
   [& gens]
-  ; Maybe a bit of a hack, but for the recursive generators I think it's
-  ; actually easier to coerce schemas to maps here, rather than walking them
-  ; later. They're getting coerced either way, and all we care about is the
-  ; top-level wrapper.
-  (schema* "one_of" {"generators" (mapv schema->map gens)}))
+  (OneOf. gens))
+
+(defn one-of
+  "A value drawn from one of several generators. Returns just values, whereas
+  one-of* returns `[index, value]` pairs."
+  [& gens]
+  (fmap second (OneOf. gens)))
 
 (defn boolean
   "Generates a boolean."
@@ -116,8 +166,197 @@
            :min-size "min_size"
            :max-size "max_size")))
 
+(defn bytes
+  "Generates a byte array. Hegel calls this `bytes`. Options:
+
+  :min-size     Minimum size
+  :max-size     Maximum size"
+ ([]
+  (schema* "binary" {}))
+ ([opts]
+  (schema "binary" {} opts
+          :min-size "min_size"
+          :max-size "max_size")))
+
+(defn regex
+  "Generates a string (not a regex!) matching the given regular expression,
+  which can be either a regex or string. Hegel doesn't say what the regular
+  expression language *is*, so this may not work with all patterns; consider
+  double-checking generated values.
+
+  IMPORTANT: I suspect that the Hegel regex semantics are Python; for example,
+  #\"^\\d$\" will produce digits like \"߄\". The Python syntax for enabling
+  ASCII mode is illegal in Java patterns, so you'll have to fall back to [0-9]
+  or a string if you want to generate the usual ASCII digits:
+
+    (regex \"(?a)^\\d+$\") ; => 5, 2, 0, 3, ...
+
+  Options:
+
+    :full-match?    Whether the pattern must match the full string, or if a
+                    substring match is allowed. Default false."
+  ([pattern]
+   (schema* "regex" {"pattern" (str pattern)}))
+  ([pattern opts]
+   (schema "regex" {"pattern" (str pattern)} opts
+           :full-match? "fullmatch")))
+
+(defrecord Vector [elements min-size max-size unique?]
+  Schema
+  (->map [this]
+    (cond-> (transient {"type" "list", "elements" (->map elements)})
+      min-size (assoc! "min_size" min-size)
+      max-size (assoc! "max_size" max-size)
+      unique?  (assoc! "unique" unique?)
+      true     persistent!))
+
+  (post [_ xs]
+    (mapv (partial post elements) xs)))
+
+(defn vector
+  "Generates a vector of elements. Takes options and a schema for elements.
+
+    :min-size   The minimum number of elements, inclusive
+    :max-size   The maximum number of elements, inclusive
+    :unique?    If set, picks unique elements"
+  ([elements]
+   (Vector. elements nil nil nil))
+  ([{:keys [min-size max-size unique?]} elements]
+   (Vector. elements min-size max-size unique?)))
+
+(defn list
+  "Like vector, but returns lists."
+  ([elements]
+   (list {} elements))
+  ([opts elements]
+   (fmap (fn fmap [x]
+           (PersistentList/create x))
+         (vector opts elements))))
+
+(defn set
+  "Generates sets of elements. Options:
+
+    :min-size   The minimum number of elements, inclusive
+    :max-size   The maximum number of elements, inclusive"
+  ([elements]
+   (set {} elements))
+  ([opts elements]
+   (fmap c/set (vector (assoc opts :unique? true) elements))))
+
+(defrecord Map [keys vals min-size max-size]
+  Schema
+  (->map [_]
+    (cond-> (transient {"type"   "dict"
+                        "keys"   (->map keys)
+                        "values" (->map vals)})
+      min-size (assoc! "min_size" min-size)
+      max-size (assoc! "max_size" max-size)
+      true persistent!))
+
+  (post [_ pairs]
+    ; Maps come back as [[k v] ...] lists, because CBOR objects have string
+    ; keys.
+    (persistent!
+      (reduce (fn build [m [k v]]
+                (assoc! m (post keys k) (post vals v)))
+              (transient {})
+              pairs))))
+
+(defn map
+  "Generates a map of keys to values, given a schema for keys and another
+  for values. Options:
+
+    :min-size   The minimum number of elements, inclusive
+    :max-size   The maximum number of elements, inclusive
+
+  Note that Hegel does not seem to be able to generate keys with some
+  types--you can't, for instance, generate keys which are vectors of integers."
+  ([keys values]
+   (Map. keys values nil nil))
+  ([{:keys [min-size max-size]} keys values]
+   (Map. keys values min-size max-size)))
+
+(defrecord Tuple [elements]
+  Schema
+  (->map [_]
+    {"type" "tuple", "elements" (mapv ->map elements)})
+
+  (post [_ xs]
+    (mapv post elements xs)))
+
+(defn tuple*
+  "Takes a sequential of schemas and generates a fixed-size vector of that
+  size, where each element is drawn from the corresponding schema."
+  [elements]
+  (Tuple. elements))
+
+(defn tuple
+  "Takes any number of schemas and generates a fixed-size vector of that
+  size, where each element is drawn from the corresponding schema."
+  ([]  (tuple* []))
+  ([a] (tuple* [a]))
+  ([a b] (tuple* [a b]))
+  ([a b c] (tuple* [a b c]))
+  ([a b c d] (tuple* [a b c d]))
+  ([a b c d & rest] (tuple* (into [a b c d] rest))))
+
+(defn email
+  "Generates an email address as a string, per RFC 5322 section 3.4.1"
+  []
+  (schema "email" {} nil))
+
+(defn url-str
+  "Generates a URL as a string, per RFC 3986."
+  []
+  (schema "url" {} nil))
+
+(defn domain
+  "Generates a domain name as a string, per RFC 1035."
+  []
+  (schema "domain" {} nil))
+
+(defn ip-address-str
+  "Generates an IP address; version should be either `4` for ipv4, or `6` for
+  ipv6. With no version, generates both kinds."
+  ([]
+   (one-of (ip-address-str 4) (ip-address-str 6)))
+  ([version]
+   (schema "ip_address" {} {:version version}
+           :version "version")))
+
+(defn local-date-str
+  "Generates an ISO 8601 date string, like 1987-02-16"
+  []
+  (schema "date" {} nil))
+
+(defn local-date
+  "Generates a java.time.LocalDate."
+  []
+  (fmap (fn fmap [x] (LocalDate/parse x)) (local-date-str)))
+
+(defn local-time-str
+  "Generates an ISO 8601 time string, like 14:30:00.123"
+  []
+  (schema "time" {} nil))
+
+(defn local-time
+  "Generates a java.time.LocalTime."
+  []
+  (fmap (fn fmap [x] (LocalTime/parse x)) (local-time-str)))
+
+(defn local-date-time-str
+  "Generates an ISO 8601 datetime string, like 2024-03-15T14:30:00"
+  []
+  (schema "datetime" {} nil))
+
+(defn local-date-time
+  "Generates a java.time.LocalDateTime."
+  []
+  (fmap (fn fmap [x] (LocalDateTime/parse x))
+        (local-date-time-str)))
+
 (defmacro let
-  "Like Clojure's let, but when a right-hand side is a generator, draws a value
+  "Like Clojure's let, but when a right-hand side is a schema, draws a value
   using hegel-clj.test/gen. This lets you mix generators and regular values.
   For example:
 
@@ -133,7 +372,7 @@
                        ;            (hegel-clj.test/gen a)
                        ;            a)]
                        `[~lhs ~rhs
-                         ~lhs (if (instance? Schema ~lhs)
+                         ~lhs (if (satisfies? Schema ~lhs)
                                 (com.aphyr.hegel-clj.test/gen ~lhs)
                                 ~lhs)])
                      (partition 2 binding-forms))]

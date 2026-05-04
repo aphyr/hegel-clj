@@ -4,7 +4,7 @@
             [clj-commons.byte-streams :as bs]
             [clojure [string :as str]
                      [walk :refer [prewalk]]]
-            [clojure.tools.logging :refer [info warn]]
+            [clojure.tools.logging :refer [debug info warn]]
             [clojure.java.io :as io]
             [com.aphyr.hegel-clj.gen :as gen])
   (:import (clojure.lang ExceptionInfo)
@@ -25,12 +25,12 @@
 
 (def core-version
   "The version of hegel-core we ask uv for."
-  "0.4.7")
+  "0.7.0")
 
 (def core-version-string
   "What version string do we expect from Hegel-core? Weirdly this is *not* the
   same as the Hegel version."
-  "0.10")
+  "Hegel/0.13")
 
 (def core-log-file
   "Where we dump Hegel-core's logs"
@@ -131,6 +131,22 @@
              (try ~@body
                   (catch Exception e#
                     (warn e# "Uncaught exception in" ~name))))))
+
+(defn deref-rethrow
+  "Deref with unwrapping throw. It's sort of confusing and not really relevant
+  that we construct exceptions in the reader thread, then hand them off through
+  Futures; it complicates catch blocks and the stacktrace isn't actually that
+  useful.
+
+  We extract the ExceptionInfo from a thrown ExecutionException and throw a
+  *new* ExceptionInfo from the current callsite."
+  [derefable]
+  (try (deref derefable)
+       (catch ExecutionException e
+         (let [cause (ex-cause e)]
+           (if (instance? ExceptionInfo cause)
+             (throw (ex-info (ex-message cause) (ex-data cause)))
+             (throw e))))))
 
 ;; The hegel-core state machine
 
@@ -275,7 +291,6 @@
                         (into-array ["uv" "tool" "run" "--from"
                                      (str "hegel-core==" core-version)
                                      "hegel"
-                                     "--stdio"
                                      "--verbosity"
                                      "normal"]))
                       (redirectError (io/file core-log-file))
@@ -486,7 +501,11 @@
     (let [type (payload "type")]
       ; Not sure how far down this road I want to go; for now let's enumerate.
       (case type
-        "StopTest" :hegel-clj/stop-test
+        ; What ARE these? Why is there no documentation for them???
+        "FlakyReplay" :hegel-clj/flaky-replay
+        "StopTest"    :hegel-clj/stop-test
+        "TypeError"   :hegel-clj/type-error
+        "ValueError"  :hegel-clj/value-error
         (keyword "hegel-clj" type)))))
 
 (defn read-loop!
@@ -702,7 +721,11 @@
   (let [res @(rpc! core (AsciiPacket. control-stream-id
                                       (gen-message-id! core control-stream-id)
                                       "hegel_handshake_start"))]
-    (assert (= (str "Hegel/" core-version-string) res))
+    (when (not= (str core-version-string) res)
+      (throw (ex-info (str "Unexpected Hegel-core version " res)
+              {:type :hegel-clj/unexpected-core-version
+               :expected core-version-string
+               :actual res})))
     res))
 
 (defn maybe-finish-test!
@@ -733,20 +756,33 @@
                        (binding [*final-case?* true]
                          (case-fn stream-id))
                        (case-fn stream-id))
-                     (catch ExecutionException e
-                       (if-let [cause (.getCause e)]
-                         (if (and (instance? ExceptionInfo cause)
-                                  (identical? :hegel-clj/stop-test
-                                              (:type (ex-data cause))))
-                           ; Hegel-core sometimes returns a StopTest error in
-                           ; the middle of a test case when we (e.g.) ask it to
-                           ; generate an integer. I am pretty sure this is a
-                           ; bug? I don't know how to respond to this either,
-                           ; because, like... we can't mark it as VALID or
-                           ; INTERESTING, since the test case didn't actually
-                           ; *run* to completion. I'm going to guess INVALID?
+                     ; Hegel-core sometimes returns a StopTest error in the
+                     ; middle of a test case when we (e.g.) ask it to generate
+                     ; an integer. I am pretty sure this is a bug? I don't know
+                     ; how to respond to this either, because, like... we can't
+                     ; mark it as VALID or INTERESTING, since the test case
+                     ; didn't actually *run* to completion. I'm going to guess
+                     ; INVALID?
+                     (catch ExceptionInfo e
+                       (if (identical? :hegel-clj/stop-test
+                                       (:type (ex-data e)))
                            {:status :invalid}
-                           (throw e)))))
+                           (do (info e "Caught exception in test case")
+                               {:status :interesting
+                                :origin (str (.getClass e) " " (ex-message e)
+                                             "\n" (pr-str (ex-data e)))})))
+                     ; Any other throwable that occurs during the test case we
+                     ; consider interesting. Throwable might not be ideal
+                     ; here, but there's a very good chance users will use
+                     ; `assert`, and that throws an Error, not an Exception!
+                     ;
+                     ; TODO: How are we going to surface this error to the
+                     ; user?
+                     (catch Throwable t
+                       (do (info t "Caught exception in test case")
+                           {:status :interesting
+                            :origin (str (.getClass t) " " (.getMessage t))})))
+
             ; Validate case result
             _ (when (not (and (map? res)
                               (keyword (:status res))))
@@ -754,6 +790,12 @@
                                   "Test cases should return a map with a :status value"
                                   {:type :malformed-test-case-return-value
                                    :return-value res})))
+            res (if (and (identical? :interesting (:status res))
+                         (not (string? (:origin res))))
+                ; Provide a default
+                (assoc res :origin "")
+                res)
+
             ; And mark case as completed
             payload (cond-> {"command" "mark_complete"
                              "status"  (case (:status res)
@@ -777,17 +819,27 @@
           (maybe-finish-test!
             core test-stream-id final-countdown tmp-results results))
         ; Check the reply for our mark_complete message
-        (try @res
-             ; AFAICT the protocol documentation is wrong: you'll *never* get a
-             ; mark_complete_reply in response to mark_complete. Instead the
-             ; server sends a StopTest error, which isn't really an error; it
-             ; just means we're done. Nor does it mean the test is done--it
-             ; actually means the test *case* is done.
-             (catch ExecutionException e
-               (let [cause (.getCause e)]
-                 (when-not (identical? :hegel-clj/stop-test
-                                       (:type (ex-data cause)))
-                   (throw e))))))
+        (try (deref-rethrow res)
+             (catch ExceptionInfo e
+               (case (:type (ex-data e))
+                 ; AFAICT the protocol documentation is wrong: you'll *never*
+                 ; get a mark_complete_reply in response to mark_complete.
+                 ; Instead the server sends a StopTest error, which isn't
+                 ; really an error; it just means we're done. Nor does it mean
+                 ; the test is done--it actually means the test *case* is done.
+                 :hegel-clj/stop-test nil
+
+                 ; For other errors here, we'll relay them back up to the
+                 ; caller. I've wound up in infinite loops ignoring flaky
+                 ; errors, so I think maybe we have to kill the whole thing?
+                 (do (.completeExceptionally results e)
+                     (stop-core! core))))
+             (catch Exception e
+                 (do (.completeExceptionally results e)
+                     (stop-core! core)))))
+      (catch Exception e
+        (.completeExceptionally results e)
+        (stop-core! core))
       (finally
         (close-stream! core stream-id)))))
 
@@ -853,12 +905,12 @@
       nil
       (case event
         "test_case"
-        (run-test-case! core test-stream-id case-fn final-countdown tmp-results
-                        results req)
+        (run-test-case! core test-stream-id case-fn final-countdown
+                        tmp-results results req)
 
         "test_done"
-        (on-test-done! core test-stream-id case-fn final-countdown tmp-results
-                       results req)
+        (on-test-done! core test-stream-id case-fn final-countdown
+                       tmp-results results req)
 
         ; Huh, something we didn't handle
         (.completeExceptionally results
@@ -923,10 +975,10 @@
                  (update-keys snake-case-str)
                  (assoc "command" "run_test"
                         "stream_id" stream-id))
-        _ @(rpc! core (CborPacket. control-stream-id
-                                     (gen-message-id! core control-stream-id)
-                                     opts))
-        r @results]
+        _ (deref-rethrow (rpc! core (CborPacket. control-stream-id
+                                                 (gen-message-id! core control-stream-id)
+                                                 opts)))
+        r (deref-rethrow results)]
     (when-let [err (:error r)]
       (throw (ex-info (str "Hegel error: " err)
                       {:type :hegel-error
@@ -937,9 +989,10 @@
   "Asks a core to generate a value. Takes a Core, stream id, and a Schema from
   hegel-clj.gen."
   [core stream-id schema]
-  (-> core
-      (rpc! (CborPacket. stream-id (gen-message-id! core stream-id)
-                         {"command" "generate"
-                          "schema"  (gen/schema->map schema)}))
-      deref
-      (get "result")))
+  (let [x (-> core
+              (rpc! (CborPacket. stream-id (gen-message-id! core stream-id)
+                                 {"command" "generate"
+                                  "schema"  (gen/->map schema)}))
+              deref-rethrow
+              (get "result"))]
+    (gen/post schema x)))

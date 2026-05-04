@@ -43,7 +43,6 @@
   (let [bad+ (fn [a b]
                (+ (min a 3) (min b 3)))
         test-results
-        (try
         (with-core core
           (run-test! core {:test-cases 2
                            :seed "123"}
@@ -53,9 +52,7 @@
                          (if (= (+ a b) (bad+ a b))
                            {:status :valid}
                            {:status :interesting
-                            :origin "bad+"})))))
-        (catch Throwable t
-          (warn t "Oh fuck")))]
+                            :origin "bad+"})))))]
     (is (= {:health-check-failure? nil,
             :seed "123",
             :invalid-test-cases 0,
