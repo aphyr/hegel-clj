@@ -1,6 +1,7 @@
 (ns com.aphyr.hegel-clj.test
   "The main API for hegel-clj."
-  (:require [clojure.pprint :refer [pprint]]
+  (:require [clojure [pprint :refer [pprint]]
+                     [test :as ct]]
             [clojure.tools.logging :refer [info warn]]
             [com.aphyr.hegel-clj [client :as c]]))
 

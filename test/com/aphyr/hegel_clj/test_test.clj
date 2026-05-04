@@ -5,7 +5,7 @@
                                  [test :refer :all]])
   (:import (java.nio ByteBuffer)))
 
-(deftest simple-test
+(deftest run-test!-test
   (is (= {:health-check-failure? nil,
           :seed "1",
           :invalid-test-cases 0,

@@ -124,10 +124,11 @@
        (finally (.. Thread currentThread (setName old-name#))))))
 
 (defmacro vthread
-  "Runs body in a virtual thread under the given name."
+  "Runs body in a virtual thread under the given name. Preserves Clojure
+  bindings."
   [name & body]
   `(.start (.name (Thread/ofVirtual) ~name)
-           (fn []
+           (bound-fn []
              (try ~@body
                   (catch Exception e#
                     (warn e# "Uncaught exception in" ~name))))))
@@ -456,8 +457,8 @@
       (let [b (.read in)]
         (if (= -1 b)
           (do ; Love the JVM InputStream API. For STDIO streams, -1 is not
-              ; actually the end; they signal that with IOException.
-              ;(info "read -1")
+              ; actually the end; they signal that with IOException. Unless the
+              ; process crashes, in which case -1 IS the end? Argh.
               (Thread/sleep 10)
               (recur i))
            (do ;(info "Read" b)
