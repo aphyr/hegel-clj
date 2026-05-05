@@ -10,7 +10,7 @@
                  [org.clojure/tools.logging "1.3.1"]
                  [mvxcvi/clj-cbor "1.1.1"]
                  ]
-  :repl-options {:init-ns hegel-clj.test}
+  :repl-options {:init-ns hegel-clj.core}
   :java-source-paths ["src"]
   :profiles {:dev {:dependencies [[org.clojure/test.check "1.1.3"]
                                   [org.slf4j/slf4j-simple "2.0.17"]]}}
