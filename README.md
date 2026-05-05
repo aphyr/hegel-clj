@@ -14,7 +14,7 @@ tree generator, for instance). I'm hoping to prove out whether this is actually
 
 Hegel-clj uses Hegel-core, which is a Python program. You'll need the
 [UV](https://docs.astral.sh/uv/) package manager, which we use to install and
-run Hegel-core. Then add hegel-clj to your project dependencies:
+run Hegel-core. Then add hegel-clj to your project dev dependencies:
 
 ```clj
 [[hegel-clj "0.1.0"]]
@@ -28,9 +28,9 @@ the index of a value in a vector:
 ```clj
 (ns my-test
   (:require [clojure.test :refer :all]
-            [hegel-clj [clojure-test :refer [with]]
-                                 [gen :as g]
-                                 [test :refer :all]]))
+            [hegel-clj [core :refer :all]
+                       [clojure-test :refer [with]]
+                       [generator :as g]]))
 
 
 (defn fast-index-of
