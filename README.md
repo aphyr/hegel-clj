@@ -3,7 +3,7 @@
 Clojure bindings for the [Hegel property-based testing
 system](https://hegel.dev/). Hegel-clj supports the full set of Hegel schemas,
 along with generator composition via `let`, `fmap`, and `bind`. It has
-shrinking, final test case reporting, and test.check integration.
+shrinking, final test case reporting, and clojure.test integration.
 
 This is usable, but early work--I haven't implemented many of Hegel's features,
 and there are a bunch of obvious user affordances missing (we have no
@@ -211,8 +211,8 @@ side, generates a random value:
 ```
 
 By the pigeonhole principle, a map of `n` elements to `n/2` elements must not
-be injective--there are some duplicates in this map. Hegel finds a small
-map with this property: `{0 0, 1 0}`.
+be injective for `2 < n`: there are some duplicate values in those maps. Hegel
+finds a small map with this property: `{0 0, 1 0}`.
 
 ```clj
 :n 29 :max-val 14
