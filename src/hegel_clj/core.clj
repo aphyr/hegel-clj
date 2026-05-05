@@ -8,12 +8,12 @@
 ;; Global/dynamic state
 
 (defonce ^{:doc "As a convenience, we keep a global client around and automatically spin it upon the first request."}
-  core
+  client
   (delay
     (c/start-core!)))
 
-(def ^:dynamic *core*
-  "We make the core accessible as a dynamic variable, so that generators can
+(def ^:dynamic *client*
+  "We make the client accessible as a dynamic variable, so that generators can
   access it without having to thread arguments through every phase of
   generation."
   nil)
@@ -62,10 +62,10 @@
 
   May also throw an exception map like {:type :hegel-error, :message \"...\"}."
   [opts case-fn]
-  (let [core @core]
-    (c/run-test! core opts
+  (let [client @client]
+    (c/run-test! client opts
                  (fn stream-id-wrapper [stream-id]
-                   (binding [*core*                core
+                   (binding [*client*              client
                              *test-case-stream-id* stream-id]
                      (case-fn))))))
 
@@ -82,7 +82,7 @@
 
       (gen (gen/one-of (gen/boolean) (gen/integer)))"
   [schema]
-  (c/generate! (or *core* @core) *test-case-stream-id* schema))
+  (c/generate! (or *client* @client) *test-case-stream-id* schema))
 
 ;; Final cases and logging
 
