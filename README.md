@@ -174,7 +174,8 @@ in there too, if you want.
 
 ## Generators
 
-All generators live in [`hegel.core`]. The basic generators are:
+All generators live in [`hegel-clj.generator`](src/hegel-clj/generator.clj).
+The basic generators are:
 
 - Scalars: `constant`, `boolean`, `integer`, `float`, `bytes`, `string`, `regex`, `symbol`, `keyword` (available in both simple and qualified variants)
 - Special strings: `email`, `domain`, `url-str`, `ip-address-str`
