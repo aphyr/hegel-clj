@@ -4,7 +4,8 @@
             [clojure.tools.logging :refer [info warn]]
             [com.aphyr.hegel-clj [clojure-test :refer [with]]
                                  [test :refer :all]
-                                 [gen :as g]])
+                                 [gen :as g]]
+            [com.aphyr.hegel-clj.gen.proto :as gp])
   (:import (java.nio ByteBuffer)
            (java.net InetAddress
                      Inet4Address
@@ -15,11 +16,11 @@
 
 (deftest integer-schema-test
   (is (= {"type" "integer"}
-         (g/->map (g/integer))))
+         (gp/->map (g/integer))))
   (is (= {"type" "integer"
           "min_value" 4
           "max_value" 7}
-         (g/->map (g/integer {:min 4 :max 7})))))
+         (gp/->map (g/integer {:min 4 :max 7})))))
 
 (deftest one-of-test
   (with {:test-cases 5}
@@ -246,3 +247,16 @@
     (is (instance? LocalDate d))
     (is (instance? LocalTime t))
     (is (instance? LocalDateTime dt))))
+
+(deftest bind-test
+  (let [s (g/bind (fn [size]
+                    (g/tuple (g/vector {:size size} (g/integer))
+                             (g/vector {:size size} (g/float))))
+                  (g/integer {:min 1, :max 5}))]
+    (with {:test-cases 10}
+          [[ints floats] s]
+          (is (pos? (count ints)))
+          (is (= (count ints) (count floats)))
+          (is (every? integer? ints))
+          (is (every? float? floats))
+          )))

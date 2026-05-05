@@ -13,6 +13,12 @@
   (delay
     (c/start-core!)))
 
+(def ^:dynamic *core*
+  "We make the core accessible as a dynamic variable, so that generators can
+  request it without having to thread arguments through every phase of
+  generation."
+  nil)
+
 (def ^:dynamic *test-case-stream-id*
   "As another convenience, we store the current test case stream ID so you
   don't have to thread it between test cases and calls to generate."
@@ -26,7 +32,7 @@
 
       :test-cases     The number of test cases to run
       :seed           A random seed
-      :derandomize    If true, and seed is not set, derives a determinstic
+      :derandomize    If true, and seed is not set, derives a deterministic
                       seed from database-key
       :database-key   A stable database key for this test
       :database       A path to the DB directory
@@ -57,10 +63,12 @@
 
   May also throw an exception map like {:type :hegel-error, :message \"...\"}."
   [opts case-fn]
-  (c/run-test! @core opts
-               (fn stream-id-wrapper [stream-id]
-                       (binding [*test-case-stream-id* stream-id]
-                         (case-fn)))))
+  (let [core @core]
+    (c/run-test! core opts
+                 (fn stream-id-wrapper [stream-id]
+                   (binding [*core*                core
+                             *test-case-stream-id* stream-id]
+                     (case-fn))))))
 
 (defmacro run-test!
   "Macro form of run-test!*; takes a body, rather than a function."
@@ -75,7 +83,7 @@
 
       (gen (gen/one-of (gen/boolean) (gen/integer)))"
   [schema]
-  (c/generate! @core *test-case-stream-id* schema))
+  (c/generate! (or *core* @core) *test-case-stream-id* schema))
 
 ;; Final cases and logging
 

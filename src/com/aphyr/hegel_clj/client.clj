@@ -6,7 +6,7 @@
                      [walk :refer [prewalk]]]
             [clojure.tools.logging :refer [debug info warn]]
             [clojure.java.io :as io]
-            [com.aphyr.hegel-clj.gen :as gen])
+            [com.aphyr.hegel-clj.gen.proto :as gen])
   (:import (clojure.lang ExceptionInfo)
            (com.aphyr.hegel_clj HegelError
                                 LimitInputStream)
