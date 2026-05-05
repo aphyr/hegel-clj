@@ -79,6 +79,11 @@
 
 ;; Final cases and logging
 
+(defn final?
+  "Returns true iff we're in the final pass of a test case."
+  []
+  c/*final-case?*)
+
 (defmacro when-final
   "Evaluates body only if this is a final test case. Helpful for logging."
   [& body]

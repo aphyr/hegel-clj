@@ -125,11 +125,10 @@
        (finally (.. Thread currentThread (setName old-name#))))))
 
 (defmacro vthread
-  "Runs body in a virtual thread under the given name. Preserves Clojure
-  bindings."
+  "Runs body in a virtual thread under the given name."
   [name & body]
   `(.start (.name (Thread/ofVirtual) ~name)
-           (bound-fn []
+           (fn ~'run []
              (try ~@body
                   (catch Exception e#
                     (warn e# "Uncaught exception in" ~name))))))
