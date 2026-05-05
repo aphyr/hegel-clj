@@ -20,11 +20,9 @@ automatically kill and restart it.
 
 Hegel-clj uses Hegel-core, which is a Python program. You'll need the
 [uv](https://docs.astral.sh/uv/) package manager, which we use to install and
-run Hegel-core. Then add hegel-clj to your project dev dependencies:
+run Hegel-core. Then add hegel-clj to your project's dev dependencies:
 
-```clj
-[[hegel-clj "0.1.0"]]
-```
+[![Clojars Project](https://img.shields.io/clojars/v/com.aphyr/hegel-clj.svg?include_prereleases)](https://clojars.org/com.aphyr/hegel-clj)
 
 ## Quickstart
 

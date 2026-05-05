@@ -1,4 +1,4 @@
-(defproject com.aphyr.hegel-clj "0.1.0-SNAPSHOT"
+(defproject com.aphyr/hegel-clj "0.1.0-SNAPSHOT"
   :description "Clojure bindings for the Hegel property-based testing library"
   :url "https://github.com/aphyr/hegel-clj"
   :license {:name "EPL-2.0 OR GPL-2.0-or-later WITH Classpath-exception-2.0"
