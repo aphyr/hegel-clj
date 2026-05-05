@@ -8,7 +8,8 @@
             [clojure.java.io :as io]
             [com.aphyr.hegel-clj.gen :as gen])
   (:import (clojure.lang ExceptionInfo)
-           (com.aphyr.hegel_clj LimitInputStream)
+           (com.aphyr.hegel_clj HegelError
+                                LimitInputStream)
            (java.io ByteArrayInputStream
                     ByteArrayOutputStream
                     DataInputStream
@@ -133,21 +134,40 @@
                   (catch Exception e#
                     (warn e# "Uncaught exception in" ~name))))))
 
+(def command-timeout
+  "How long do we wait for Hegel to respond to a command, in millis?"
+  10000)
+
 (defn deref-rethrow
   "Deref with unwrapping throw. It's sort of confusing and not really relevant
-  that we construct exceptions in the reader thread, then hand them off through
-  Futures; it complicates catch blocks and the stacktrace isn't actually that
-  useful.
+  that we construct HegelErrors in the reader thread, then hand them off
+  through Futures; it complicates catch blocks and the cause stacktrace isn't
+  actually that useful.
 
-  We extract the ExceptionInfo from a thrown ExecutionException and throw a
-  *new* ExceptionInfo from the current callsite."
-  [derefable]
-  (try (deref derefable)
-       (catch ExecutionException e
-         (let [cause (ex-cause e)]
-           (if (instance? ExceptionInfo cause)
-             (throw (ex-info (ex-message cause) (ex-data cause)))
-             (throw e))))))
+  We extract HegelErrors from a thrown ExecutionException and throw a *new*
+  HegelError from the current callsite."
+  ([derefable]
+   (try (deref derefable)
+        (catch ExecutionException e
+          (let [cause (ex-cause e)]
+            (if (instance? HegelError cause)
+              (throw (HegelError. (.getMessage cause)
+                                  (.getData cause)
+                                  cause))
+              (throw e))))))
+  ([derefable timeout-ms]
+   (try (let [v (deref derefable timeout-ms ::timeout)]
+          (when (identical? v ::timeout)
+            (throw (ex-info "Hegel-clj timeout (perhaps hegel-core has crashed?)"
+                            {:type :timeout})))
+          v)
+        (catch ExecutionException e
+          (let [cause (ex-cause e)]
+            (if (instance? HegelError cause)
+              (throw (HegelError. (.getMessage cause)
+                                  (.getData cause)
+                                  cause))
+              (throw e)))))))
 
 ;; The hegel-core state machine
 
@@ -601,10 +621,10 @@
               (do (if-let [type (error-type payload)]
                     ; This is an error message
                     (.completeExceptionally
-                      p (ex-info (str "Hegel-core error: " (payload "type"))
-                                 {:stream-id          stream-id
-                                  :request-message-id rid
-                                  :type               type}))
+                      p (HegelError. (str "Hegel-core error: " (payload "type"))
+                                     {:stream-id          stream-id
+                                      :request-message-id rid
+                                      :type               type}))
                     (.complete p payload))
                   ; We don't need to track this any more
                   (swap! replies update stream-id dissoc rid))
@@ -762,12 +782,13 @@
                      ; an integer. I am pretty sure this is a bug? I don't know
                      ; how to respond to this either, because, like... we can't
                      ; mark it as VALID or INTERESTING, since the test case
-                     ; didn't actually *run* to completion. I'm going to guess
-                     ; INVALID?
-                     (catch ExceptionInfo e
+                     ; didn't actually *run* to completion. Returning INVALID
+                     ; seems to hang indefinitely. I guess we just close the
+                     ; stream?
+                     (catch HegelError e
                        (if (identical? :hegel-clj/stop-test
                                        (:type (ex-data e)))
-                           {:status :invalid}
+                           ::weird-stop-test
                            (do (info e "Caught exception in test case")
                                {:status :interesting
                                 :origin (str (.getClass e) " " (ex-message e)
@@ -782,62 +803,72 @@
                      (catch Throwable t
                        (do (info t "Caught exception in test case")
                            {:status :interesting
-                            :origin (str (.getClass t) " " (.getMessage t))})))
+                            :origin (str (.getClass t) " " (.getMessage t))})))]
+        (if (identical? ::weird-stop-test res)
+          ; I think we're just supposed to close the stream and give up?
+          ; Sending a mark_complete will hang forever o____o
+          nil
 
-            ; Validate case result
-            _ (when (not (and (map? res)
-                              (keyword (:status res))))
-                         (throw (ex-info
-                                  "Test cases should return a map with a :status value"
-                                  {:type :malformed-test-case-return-value
-                                   :return-value res})))
-            res (if (and (identical? :interesting (:status res))
-                         (not (string? (:origin res))))
-                ; Provide a default
-                (assoc res :origin "")
-                res)
+          (let [; Validate case result
+                _ (when (not (and (map? res)
+                                  (keyword (:status res))))
+                    (throw (ex-info
+                             "Test cases should return a map with a :status value"
+                             {:type :malformed-test-case-return-value
+                              :return-value res})))
+                res (if (and (identical? :interesting (:status res))
+                             (not (string? (:origin res))))
+                      ; Provide a default
+                      (assoc res :origin "")
+                      res)
 
-            ; And mark case as completed
-            payload (cond-> {"command" "mark_complete"
-                             "status"  (case (:status res)
-                                         :valid "VALID"
-                                         :invalid "INVALID"
-                                         :interesting "INTERESTING")}
-                      (identical? :interesting (:status res))
-                      (assoc "origin" (:origin res)))
-            req (CborPacket. stream-id
-                             (gen-message-id! core stream-id)
-                             payload)
-            res (rpc! core req)]
-        ; If we're in the final countdown, we should decrement.
-        (when is-final?
-          (swap! final-countdown
-                 (fn countdown [c]
-                   (if c
-                     (dec c)
-                     c)))
-          ; And we may be ready to return to the top-level test caller
-          (maybe-finish-test!
-            core test-stream-id final-countdown tmp-results results))
-        ; Check the reply for our mark_complete message
-        (try (deref-rethrow res)
-             (catch ExceptionInfo e
-               (case (:type (ex-data e))
-                 ; AFAICT the protocol documentation is wrong: you'll *never*
-                 ; get a mark_complete_reply in response to mark_complete.
-                 ; Instead the server sends a StopTest error, which isn't
-                 ; really an error; it just means we're done. Nor does it mean
-                 ; the test is done--it actually means the test *case* is done.
-                 :hegel-clj/stop-test nil
+                ; And mark case as completed
+                payload (cond-> {"command" "mark_complete"
+                                 "status"  (case (:status res)
+                                             :valid "VALID"
+                                             :invalid "INVALID"
+                                             :interesting "INTERESTING")}
+                          (identical? :interesting (:status res))
+                          (assoc "origin" (:origin res)))
+                req (CborPacket. stream-id
+                                 (gen-message-id! core stream-id)
+                                 payload)
+                t1  (System/nanoTime)
+                res (rpc! core req)]
+            ; If we're in the final countdown, we should decrement.
+            (when is-final?
+              (swap! final-countdown
+                     (fn countdown [c]
+                       (if c
+                         (dec c)
+                         c)))
+              ; And we may be ready to return to the top-level test caller
+              (maybe-finish-test!
+                core test-stream-id final-countdown tmp-results results))
+            ; Check the reply for our mark_complete message
+            (try (deref-rethrow res command-timeout)
+                 (catch HegelError e
+                   (case (:type (ex-data e))
+                     ; AFAICT the protocol documentation is wrong: you'll
+                     ; *never* get a mark_complete_reply in response to
+                     ; mark_complete. Instead the server sends a StopTest
+                     ; error, which isn't really an error; it just means we're
+                     ; done. Nor does it mean the test is done--it actually
+                     ; means the test *case* is done.
+                     :hegel-clj/stop-test nil
 
-                 ; For other errors here, we'll relay them back up to the
-                 ; caller. I've wound up in infinite loops ignoring flaky
-                 ; errors, so I think maybe we have to kill the whole thing?
-                 (do (.completeExceptionally results e)
-                     (stop-core! core))))
-             (catch Exception e
-                 (do (.completeExceptionally results e)
-                     (stop-core! core)))))
+                     ; For other errors here, we'll relay them back up to the
+                     ; caller. I've wound up in infinite loops ignoring flaky
+                     ; errors, so I think maybe we have to kill the whole
+                     ; thing?
+                     (do
+                       (.completeExceptionally results e)
+                       (stop-core! core))))
+                 (catch Exception e
+                   (info "Waited for" (* 1e-9 (- (System/nanoTime) t1))
+                         "s for " req)
+                   (do (.completeExceptionally results e)
+                       (stop-core! core)))))))
       (catch Exception e
         (.completeExceptionally results e)
         (stop-core! core))
@@ -976,10 +1007,12 @@
                  (update-keys snake-case-str)
                  (assoc "command" "run_test"
                         "stream_id" stream-id))
-        _ (deref-rethrow (rpc! core (CborPacket. control-stream-id
-                                                 (gen-message-id! core control-stream-id)
-                                                 opts)))
-        r (deref-rethrow results)]
+        _ (deref-rethrow (rpc! core (CborPacket.
+                                      control-stream-id
+                                      (gen-message-id! core control-stream-id)
+                                      opts))
+                         command-timeout)
+        r (deref results)]
     (when-let [err (:error r)]
       (throw (ex-info (str "Hegel error: " err)
                       {:type :hegel-error
@@ -994,6 +1027,6 @@
               (rpc! (CborPacket. stream-id (gen-message-id! core stream-id)
                                  {"command" "generate"
                                   "schema"  (gen/->map schema)}))
-              deref-rethrow
+              (deref-rethrow command-timeout)
               (get "result"))]
     (gen/post schema x)))

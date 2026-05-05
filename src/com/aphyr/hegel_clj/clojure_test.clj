@@ -39,14 +39,21 @@
 
       (deftest reverse-test
         ; Generate roughly a hundred integers of vectors
-        (checking integers {:test-cases 100}
-                  [xs (gen/vector (g/integer))]
+        (with {:test-cases 100, :seed 5}
+              [xs (gen/vector (g/integer))]
+
           ; Print out only the smallest vectors that make this fail
           (fprn :xs xs)
+
           ; Is sorting the same as reversing? Clearly not, so this will fail,
           ; likely with a two-element vector of different numbers.
           (is (= (sort xs)
-  (reverse xs)))))"
+              (reverse xs)))))
+
+  `with` suppresses clojure.test reporting until the final phase, where it
+  reports as normal. You can broadly pretend that this is a clojure.test case
+  where you just happened to guess the right small inputs to reproduce a
+  failing bug."
   [opts bindings & body]
   `(let [res# (h/run-test! ~opts
                            ; Generate values and evaluate body, recording
