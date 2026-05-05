@@ -14,11 +14,15 @@
           :passed? false,
           :valid-test-cases 6,
           :error nil,
-          :interesting-test-cases 1}
+          :interesting-test-cases 1
+          :final [{:status :interesting
+                   :origin "bad+"
+                   :foo :bar}]}
          (run-test! {:seed 1}
                     (g/let [a (gen (g/integer))
                             b (gen (g/integer))]
                       (if (not= (+ a b) (+ a (max b 3)))
                         {:status :interesting
-                         :origin "bad+"}
+                         :origin "bad+"
+                         :foo :bar}
                         {:status :valid}))))))

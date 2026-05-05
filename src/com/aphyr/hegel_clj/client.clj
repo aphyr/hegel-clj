@@ -750,18 +750,20 @@
 
 (defn maybe-finish-test!
   "Called when we might be done with a test. If the final countdown is zero,
-  delivers the results of tmp-results to results, and closes the test
-  stream."
-  [core test-stream-id final-countdown tmp-results ^CompletableFuture results]
+  delivers the results of final-case-results and tmp-results to results, and
+  closes the test stream."
+  [core test-stream-id final-countdown final-case-results tmp-results ^CompletableFuture results]
   (when (= 0 @final-countdown)
-    (.complete results @tmp-results)
+    (.complete results
+               (assoc @tmp-results
+                      :final @final-case-results))
     (close-stream! core test-stream-id)))
 
 (defn run-test-case!
   "Part of run-test!. Same arguments; this part handles a test_case command
   from the server. Acknowledges the test-case command, invokes case-fn to
   perform the test case, and sends results back to the server."
-  [core test-stream-id case-fn final-countdown tmp-results
+  [core test-stream-id case-fn final-countdown final-case-results tmp-results
    ^CompletableFuture results ^CborPacket req]
   (reply! core req {"result" nil})
   (let [payload   (.payload req)
@@ -774,7 +776,9 @@
       ; Actually run case
       (let [res (try (if is-final?
                        (binding [*final-case?* true]
-                         (case-fn stream-id))
+                         (let [r (case-fn stream-id)]
+                           (swap! final-case-results conj r)
+                           r))
                        (case-fn stream-id))
                      ; Hegel-core sometimes returns a StopTest error in the
                      ; middle of a test case when we (e.g.) ask it to generate
@@ -843,7 +847,8 @@
                          c)))
               ; And we may be ready to return to the top-level test caller
               (maybe-finish-test!
-                core test-stream-id final-countdown tmp-results results))
+                core test-stream-id final-countdown final-case-results
+                tmp-results results))
             ; Check the reply for our mark_complete message
             (try (deref-rethrow res command-timeout)
                  (catch HegelError e
@@ -877,7 +882,7 @@
 (defn on-test-done!
   "Part of run-test!. Same arguments; this part handles a test_done command by
   transitioning to the final phase of the test."
-  [core test-stream-id case-fn final-countdown tmp-results
+  [core test-stream-id case-fn final-countdown final-case-results tmp-results
    ^CompletableFuture results req]
   ; Fun fact: this does not mean the test is done. It means the start of
   ; a final phase, where the test replays `interesting_test_cases` cases.
@@ -906,7 +911,7 @@
     ; And ack
     (reply! core req {"result" true})
     ; If we found nothing interesting, we may return final results now
-    (maybe-finish-test! core test-stream-id final-countdown
+    (maybe-finish-test! core test-stream-id final-countdown final-case-results
                         tmp-results results)))
 
 (defn run-test-handler!
@@ -924,7 +929,7 @@
                     final test cases are complete. This is what the caller
                     blocks on.
   `req` The request CborPacket we're processing."
-  [core test-stream-id case-fn final-countdown tmp-results
+  [core test-stream-id case-fn final-countdown final-case-results tmp-results
    ^CompletableFuture results req]
   (let [payload    (:payload req)
         event      (payload "event")
@@ -937,11 +942,11 @@
       (case event
         "test_case"
         (run-test-case! core test-stream-id case-fn final-countdown
-                        tmp-results results req)
+                        final-case-results tmp-results results req)
 
         "test_done"
         (on-test-done! core test-stream-id case-fn final-countdown
-                       tmp-results results req)
+                       final-case-results tmp-results results req)
 
         ; Huh, something we didn't handle
         (.completeExceptionally results
@@ -977,6 +982,11 @@
       {:status :interesting
        :origin \"...\"}
 
+  These maps can have extra information, which will be returned to you via
+  `:final` in the event Hegel finds interesting test cases. The `:origin` key
+  tells Hegel where the failure occurred; I suggest a file name and line
+  number. Origin is optional: if omitted, it will be the empty string.
+
   Returns a map describing the results of the test, of the form:
 
       :passed?                Did all tests pass?)
@@ -987,17 +997,24 @@
       :seed                   The random seed used
       :flaky?                 Hegel thought this test was non-deterministic
       :health-check-failure?  Did a health check fail during the test?
+      :final                  A vector of result maps (e.g. {:status
+                              :interesting, :origin \"...\", ...}) returned
+                              from each test case run during the final phase.
 
   May also throw an exception map like {:type :hegel-error, :message \"...\"}."
   [core opts case-fn]
-  (let [stream-id       (open-stream! core)
-        final-countdown (atom nil)
-        tmp-results     (promise)
-        results         (CompletableFuture.)
-        _ (register-stream-handler! core stream-id
-                                    (partial run-test-handler! core stream-id
-                                             case-fn final-countdown tmp-results
-                                             results))
+  (let [stream-id          (open-stream! core)
+        final-countdown    (atom nil)
+        ; We use this to build up the maps returned by each final case.
+        final-case-results (atom [])
+        ; We use this to keep track of Hegel's results map.
+        tmp-results        (promise)
+        ; And here's the future we use to return to the caller.
+        results            (CompletableFuture.)
+        _ (register-stream-handler!
+            core stream-id
+            (partial run-test-handler! core stream-id case-fn final-countdown
+                     final-case-results tmp-results results))
         ; Kick off test
         opts (-> opts
                  (default :test-cases 100)

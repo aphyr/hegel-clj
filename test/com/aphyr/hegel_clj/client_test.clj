@@ -30,7 +30,8 @@
             :passed? true,
             :valid-test-cases 2,
             :error nil,
-            :interesting-test-cases 0}
+            :interesting-test-cases 0
+            :final []}
            (run-test! core {:test-cases 2
                             :seed 6}
                       (fn [stream-id]
@@ -52,7 +53,8 @@
                          (if (= (+ a b) (bad+ a b))
                            {:status :valid}
                            {:status :interesting
-                            :origin "bad+"})))))]
+                            :origin "bad+"
+                            :foo :bar})))))]
     (is (= {:health-check-failure? nil,
             :seed "123",
             :invalid-test-cases 0,
@@ -61,5 +63,6 @@
             :passed? false,
             :valid-test-cases 8,
             :error nil,
-            :interesting-test-cases 1}
+            :interesting-test-cases 1
+            :final [{:status :interesting, :origin "bad+", :foo :bar}]}
            test-results))))
