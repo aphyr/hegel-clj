@@ -310,6 +310,12 @@ in other generators.
 
 ## We Have Generative Tests At Home
 
+The general idea of Hegel is "writing good generators and shrinkers is really
+hard; we should let a few people do that work well and re-use it in different
+languages". This has advantages (the Hegel authors have done a *ton* of work we
+can leverage) and disadvantages (it's a separate daemon with its own runtime,
+serialization costs, IPC lag, etc.)
+
 Clojure has an excellent generative testing library called
 [test.check](https://github.com/clojure/test.check). Because test.check is
 functional, it relies heavily on composing and transforming generators through
