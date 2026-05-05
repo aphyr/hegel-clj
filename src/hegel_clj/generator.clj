@@ -7,7 +7,7 @@
   options.
 
   See https://hegel.dev/reference/protocol#schemas for details."
-  (:refer-clojure :exclude [boolean bytes float let list map set vector])
+  (:refer-clojure :exclude [boolean bytes float let list map set vector symbol keyword sorted-map sorted-set])
   (:require [clojure [core :as c]
                      [walk :refer [prewalk]]]
             [clojure.tools.logging :refer [info warn]]
@@ -257,6 +257,14 @@
   ([opts elements]
    (fmap c/set (vector (assoc opts :unique? true) elements))))
 
+(defn sorted-set
+  "Like `set`, but generates sorted sets."
+  ([elements]
+   (sorted-set nil elements))
+  ([opts elements]
+   (fmap (partial into (c/sorted-set))
+         (set opts elements))))
+
 (defrecord Map [keys vals min-size max-size]
   Schema
   (->map [_]
@@ -292,6 +300,14 @@
    (c/let [min-size (or min-size size)
          max-size (or max-size size)]
      (Map. keys values min-size max-size))))
+
+(defn sorted-map
+  "Like `map`, but generates sorted maps."
+  ([keys values]
+   (sorted-map nil keys values))
+  ([opts keys values]
+   (fmap (partial into (c/sorted-map))
+         (map opts keys values))))
 
 (defrecord Tuple [elements]
   Schema
@@ -371,6 +387,49 @@
   []
   (fmap (fn fmap [x] (LocalDateTime/parse x))
         (local-date-time-str)))
+
+(def clj-sym-initial-pattern
+  "A partial regular expression pattern for the basic characters that can start
+  a Clojure symbol"
+  "A-Za-z_+\\-*=!$%&")
+
+(def clj-sym-basic-pattern
+  "A partial regular expression pattern for the basic characters that can make
+  up a Clojure symbol."
+  (str "[" clj-sym-initial-pattern "]"
+       "[0-9#'" clj-sym-initial-pattern "]*"))
+
+(defn simple-symbol
+  "A unqualified Clojure symbol, e.g. 'foo"
+  []
+  (fmap c/symbol
+        (regex (str "\\A" clj-sym-basic-pattern "\\Z"))))
+
+(defn qualified-symbol
+  "A qualified Clojure symbol, e.g. 'foo/bar"
+  []
+  (fmap c/symbol
+        (regex (str "\\A" clj-sym-basic-pattern "/" clj-sym-basic-pattern "\\Z"))))
+
+(defn symbol
+  "Generates a Clojure symbol, either simple or qualified."
+  []
+  (one-of (simple-symbol) (qualified-symbol)))
+
+(defn simple-keyword
+  "An unqualified Clojure keyword, e.g. :foo"
+  []
+  (fmap c/keyword (simple-symbol)))
+
+(defn qualified-keyword
+  "An unqualified Clojure keyword, e.g. :foo/bar"
+  []
+  (fmap c/keyword (qualified-symbol)))
+
+(defn keyword
+  "A Clojure keyword, either simple or qualified."
+  []
+  (fmap c/keyword (symbol)))
 
 (defmacro let
   "Like Clojure's let, but when a right-hand side is a schema, draws a value

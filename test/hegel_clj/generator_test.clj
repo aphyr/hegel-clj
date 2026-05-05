@@ -22,6 +22,19 @@
           "max_value" 7}
          (gp/->map (g/integer {:min 4 :max 7})))))
 
+(deftest bind-test
+  (let [s (g/bind (fn [size]
+                    (g/tuple (g/vector {:size size} (g/integer))
+                             (g/vector {:size size} (g/float))))
+                  (g/integer {:min 1, :max 5}))]
+    (with {:test-cases 10}
+          [[ints floats] s]
+          (is (pos? (count ints)))
+          (is (= (count ints) (count floats)))
+          (is (every? integer? ints))
+          (is (every? float? floats))
+          )))
+
 (deftest one-of-test
   (with {:test-cases 5}
     [x (g/one-of (g/boolean) (g/float))]
@@ -135,6 +148,25 @@
         (is (every? integer? long))
         (is (<= 3 (count long)))))
 
+(deftest sorted-set-test
+  (with {:test-cases 10}
+        [any    (g/sorted-set (g/one-of (g/float) (g/integer)))
+         short  (g/sorted-set {:max-size 5} (g/boolean))
+         long   (g/sorted-set {:min-size 3} (g/integer))]
+        (is (sorted? any))
+        (is (set? any))
+        (is (every? number? any))
+
+        (is (set? short))
+        (is (sorted? short))
+        (is (every? boolean? short))
+        (is (<= (count short) 5))
+
+        (is (set? long))
+        (is (sorted? long))
+        (is (every? integer? long))
+        (is (<= 3 (count long)))))
+
 (deftest map-test
   (with {:test-cases 10}
     [m     (g/map (g/integer) (g/set (g/float)))
@@ -152,6 +184,32 @@
     (is (every? boolean? (vals small)))
 
     (is (map? large))
+    (is (<= 2 (count large)))
+    (is (every? integer? (keys large)))
+    (is (every? set? (vals large)))
+    (is (every? boolean? (mapcat val large)))))
+
+(deftest sorted-map-test
+  (with {:test-cases 10}
+    [m     (g/sorted-map (g/integer) (g/set (g/float)))
+     small (g/sorted-map {:max-size 6} (g/string) (g/boolean))
+     large (g/sorted-map {:min-size 2} (g/integer) (g/set (g/boolean)))
+     ]
+    (fprn m)
+    (is (map? m))
+    (is (sorted? m))
+    (is (every? integer? (keys m)))
+    (is (every? set? (vals m)))
+    (is (every? float? (mapcat val m)))
+
+    (is (map? small))
+    (is (sorted? small))
+    (is (<= (count small) 6))
+    (is (every? string? (keys small)))
+    (is (every? boolean? (vals small)))
+
+    (is (map? large))
+    (is (sorted? large))
     (is (<= 2 (count large)))
     (is (every? integer? (keys large)))
     (is (every? set? (vals large)))
@@ -248,15 +306,20 @@
     (is (instance? LocalTime t))
     (is (instance? LocalDateTime dt))))
 
-(deftest bind-test
-  (let [s (g/bind (fn [size]
-                    (g/tuple (g/vector {:size size} (g/integer))
-                             (g/vector {:size size} (g/float))))
-                  (g/integer {:min 1, :max 5}))]
-    (with {:test-cases 10}
-          [[ints floats] s]
-          (is (pos? (count ints)))
-          (is (= (count ints) (count floats)))
-          (is (every? integer? ints))
-          (is (every? float? floats))
-          )))
+(deftest symbol-test
+  (with {:test-cases 50}
+        [s  (g/symbol)
+         us (g/simple-symbol)
+         qs (g/qualified-symbol)]
+    (is (symbol? s))
+    (is (simple-symbol? us))
+    (is (qualified-symbol? qs))))
+
+(deftest keyword-test
+  (with {:test-cases 50}
+        [k  (g/keyword)
+         uk (g/simple-keyword)
+         qk (g/qualified-keyword)]
+    (is (keyword? k))
+    (is (simple-keyword? uk))
+    (is (qualified-keyword? qk))))
