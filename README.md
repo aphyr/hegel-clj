@@ -10,6 +10,11 @@ and there are a bunch of obvious user affordances missing (we have no recursive
 tree generator, for instance). I'm hoping to prove out whether this is actually
 *good* before going too far. Users and contributors welcome.
 
+Hegel-core is very new, the documentation is vague, and the daemon frequently
+crashes or gets stuck. It is not hard to write an incorrect or expensive
+generator that breaks the daemon; I intend to but have not yet written logic to
+automatically kill and restart it.
+
 ## Installation
 
 Hegel-clj uses Hegel-core, which is a Python program. You'll need the
@@ -31,7 +36,6 @@ the index of a value in a vector:
             [hegel-clj [core :refer :all]
                        [clojure-test :refer [with]]
                        [generator :as g]]))
-
 
 (defn fast-index-of
   "Finds the index of element `x` in collection `xs`, or -1."
@@ -143,6 +147,18 @@ the same value) they're not *identical* (at the same memory address). Longs up
 to 127 *are* identical on OpenJDK, so we wouldn't have caught this bug if we
 stuck to small numbers.
 
+## Overview
+
+- [`hegel-clj.core`](/src/hegel-clj/core.clj) provides a friendly API to Hegel-clj, including dynamic state.
+- [`hegel.generator`](/src/hegel-clj/generator.clj) constructs generators of random values.
+- [`hegel.clojure-test`](/src/hegel-clj/clojure_test.clj) provides `clojure.test` integration.
+- [`hegel.client`](/src/hegel-clj/client.clj) is the internal client which spawns and talks to a Hegel-core daemon.
+
+Your main entrypoint is generally either through a test integration namespace
+(like `hegel-clj.clojure-test/with`), or by starting a test using
+`hegel-clj.core/run-test!`. From there, you can generate random values using
+`hegel-clj.generator/let` or the lower-level `hegel-clj.core/gen`.
+
 ## Philosophy
 
 Hegel takes an imperative approach to testing; generated values are
@@ -155,6 +171,142 @@ incrementally.
 We lean into that imperative style by making it easy to do `prn`-style
 debugging, but only during the final test phase. There's a more-functional core
 in there too, if you want.
+
+## Generators
+
+All generators live in [`hegel.core`]. The basic generators are:
+
+- Scalars: `constant`, `boolean`, `integer`, `float`, `bytes`, `string`, `regex`, `symbol`, `keyword` (available in both simple and qualified variants)
+- Special strings: `email`, `domain`, `url-str`, `ip-address-str`
+- Dates and times: `local-date`, `local-time`, `local-date-time`, and their `-str` variants for ISO8601 strings.
+- Collections: `tuple`, `list`, `vector`, `set`, `sorted-set`, `map`,
+  `sorted-map`.
+- Higher-order generators: `fmap`, `bind`
+
+Typically you'll find it most convenient to use `g/let`, which works just like
+Clojure `let`, but when provided with a generator schema on the right hand
+side, generates a random value:
+
+```clj
+(require '[hegel-clj [core :as h]
+                     [generator :as g]])
+(run-test! {}
+  (g/let [; First, generate a random size for a collection between 2 and 64
+          n       (g/integer {:min 2 :max 64})
+          ; Compute a maximum value, half the size
+          max-val (long (/ n 2))
+          ; You can print for side effects if you like!
+          _       (prn :n n :max-val max-val)
+          ; Now, make a map with n elements, whose values are up in [0, max-val]
+          m       (g/map {:size n}
+                         (g/integer)
+                         (g/integer {:min 0, :max max-val}))]
+    (prn m)
+    ; Assert that the values in the map are distinct
+    {:n n
+     :m m
+     :status (if (= (vals m) (distinct (vals m)))
+               :valid
+               :interesting)}))
+```
+
+By the pigeonhole principle, a map of `n` elements to `n/2` elements must not
+be injective--there are some duplicates in this map. Hegel finds a small
+map with this property: `{0 0, 1 0}`.
+
+```clj
+:n 29 :max-val 14
+{-24010 1, -108 3, -8141 9, 10999 4, -157746965 1, -6658347437399882413 12, -1895 3, -57 11, 26188 4, 119 5, 1814143433 4, 4294967296 7, -61746485611849544375328652203653776230N 7, 117 9, -13461 11, -1393526811 11, -6725207902868597187 4, -53 11, 31427 8, -2233 14, 34 5, -96 2, -113 2, 24195 2, 45 8, 7103 12, 8796093022209 6, 7182105681986522026 14, -1510709640 8}
+...
+:n 2 :max-val 1
+{0 0, 1 1}
+:n 2 :max-val 1
+{0 0, 1 0}
+{:health-check-failure? nil,
+ :final [{:n 2, :m {0 0, 1 0},:status :interesting}],
+ :seed "336846547442498173212578659943701187349",
+ :invalid-test-cases 7,
+ :test-cases 51,
+ :flaky? nil,
+ :passed? false,
+ :valid-test-cases 2,
+ :error nil,
+ :interesting-test-cases 1}
+```
+
+If you prefer, you can explicitly generate a value from a schema at any time
+during a test case with `hegel-clj.core/gen`.
+
+There are also two higher-order generators, `fmap` and `bind`, which are
+helpful for producing composable generators you can pass around. The `fmap`
+function wraps a generator in one whose values are transformed by some function.
+Here we transform the `(g/integer)` generator by converting its values to
+`BigInt`s:
+
+```clj
+(run-test! {:test-cases 5}
+  (g/let [x (g/fmap bigint (g/integer))]
+    (prn x)
+    {:status :valid}))
+0N
+-6894N
+25626N
+28320N
+25N
+```
+
+The `bind` generator works like `fmap`, but its function takes a value and
+returns a *new* generator, which is asked to produce a value in turn. This
+generator produces square matrices between 5 and 10 elements on a side.
+
+```clj
+(require '[hegel-clj [core :as h]
+                     [generator :as g]])
+
+(let [matrix (->> ; Pick a rank between 5 and 10
+                  (g/integer {:min 5, :max 10})
+                  ; Take that rank and produce [rank elements] pairs,
+                  ; with rank^2 elements
+                  (g/bind (fn [rank]
+                            (g/tuple (g/constant rank)
+                                     (g/vector {:size (* rank rank)}
+                                               (g/integer {:min 0 :max 9})))))
+                  ; Take those [rank elements] pairs and rearrange the flat
+                  ; elements into nested vectors
+                  (g/fmap (fn [[rank flat-elements]]
+                            (->> flat-elements
+                                 (partition rank)
+                                 (mapv vec)))))]
+  (run-test! {:test-cases 10}
+    (g/let [m matrix]
+      (pprint m)
+      {:status :valid})))
+
+...
+
+[[2 9 9 8 0 7 9 0 9 3]
+ [5 3 8 9 5 3 5 7 1 7]
+ [5 5 0 0 7 5 8 0 8 4]
+ [7 7 1 4 7 2 4 5 4 1]
+ [8 7 9 1 4 8 0 6 0 6]
+ [3 5 8 7 7 0 8 3 6 9]
+ [1 9 6 7 3 6 8 1 7 9]
+ [8 9 4 0 7 4 8 3 2 9]
+ [8 4 7 1 0 4 9 2 1 9]
+ [0 6 9 1 5 3 3 0 3 3]]
+[[1 5 9 3 4 6 9]
+ [5 0 5 2 3 2 8]
+ [7 2 0 8 1 9 3]
+ [9 0 7 3 4 3 6]
+ [1 4 6 4 4 7 8]
+ [9 0 8 5 8 2 3]
+ [1 1 4 4 4 5 1]]
+```
+
+The generators API is built with `->>` composition in mind; schemas are usually
+placed in the final argument. Of course you could write this more plainly with
+`g/let`, but this definition of `matrix` is a composable object you can re-use
+in other generators.
 
 ## We Have Generative Tests At Home
 
@@ -189,8 +341,8 @@ different elements--likely without `42`.
 Hegel is able to shrink this example to a much more reasonable `[42]`:
 
 ```clj
-(require '[hegel-clj.test :as h]
-         '[hegel-clj.gen :as hg])
+(require '[hegel-clj [core :as h]
+                     [generator :as hg]])
 (-> (h/run-test! {:test-cases 1000
                   :seed       1777986545686}
                  (hg/let [size (hg/integer {:min 0, :max 128})
