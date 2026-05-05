@@ -2,7 +2,7 @@
   (:require [clojure [pprint :refer [pprint]]
                      [test :refer :all]]
             [clojure.tools.logging :refer [info warn]]
-            [hegel-clj [gen :as g]
+            [hegel-clj [generator :as g]
                        [clojure-test :refer [with]]
                        [core :refer :all]])
   (:import (java.io StringWriter)))

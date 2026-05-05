@@ -2,7 +2,7 @@
   (:require [clojure.test :refer :all]
             [clojure.tools.logging :refer [info warn]]
             [hegel-clj [core :refer :all]
-                       [gen :as g]]))
+                       [generator :as g]]))
 
 (deftest run-test!-test
   (is (= {:health-check-failure? nil,

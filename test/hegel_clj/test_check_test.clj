@@ -6,7 +6,7 @@
             [clojure.test.check [properties :as tcp]
                                 [generators :as tcg]]
             [hegel-clj [core :as h]
-                       [gen :as hg]]))
+                       [generator :as hg]]))
 
 (deftest bind-shrink-test
   ; In test.check, one of the awkward things that can happen is that using one

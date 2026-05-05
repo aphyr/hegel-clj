@@ -1,4 +1,4 @@
-(ns hegel-clj.gen.proto
+(ns hegel-clj.generator.proto
   "The protocol for generators. This lives in a separate namespace so that we
   can tie the circular knot between the client (which uses schemas) and the
   schemas (which need the client to generate new values).")

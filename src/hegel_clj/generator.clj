@@ -1,4 +1,4 @@
-(ns hegel-clj.gen
+(ns hegel-clj.generator
   "Composable generators. These functions return a *schema*, which can be used
   with hegel-clj.test/gen to produce an actual value. We generally follow
   Hegel's protocol, but with a Clojure flavor: we use `vec` instead of `list`,
@@ -12,7 +12,7 @@
                      [walk :refer [prewalk]]]
             [clojure.tools.logging :refer [info warn]]
             [hegel-clj [core :as h]]
-            [hegel-clj.gen.proto :refer :all])
+            [hegel-clj.generator.proto :refer :all])
   (:import (clojure.lang PersistentList)
            (java.time LocalDate
                       LocalDateTime

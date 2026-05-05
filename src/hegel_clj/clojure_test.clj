@@ -1,6 +1,6 @@
 (ns hegel-clj.clojure-test
   "Hegel integration with clojure.test."
-  (:require [hegel-clj [gen :as g]
+  (:require [hegel-clj [generator :as g]
                        [core :as h]]
             [clojure [pprint :refer [pprint]]
                      [test :as ct]]
