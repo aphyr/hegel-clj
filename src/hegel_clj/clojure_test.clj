@@ -1,7 +1,7 @@
 (ns hegel-clj.clojure-test
   "Hegel integration with clojure.test."
   (:require [hegel-clj [gen :as g]
-                                 [test :as h]]
+                       [core :as h]]
             [clojure [pprint :refer [pprint]]
                      [test :as ct]]
             [clojure.tools.logging :refer [info warn]]))

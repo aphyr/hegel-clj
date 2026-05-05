@@ -1,5 +1,5 @@
-(ns hegel-clj.test
-  "The main API for hegel-clj."
+(ns hegel-clj.core
+  "The ain API for hegel-clj."
   (:require [clojure [pprint :refer [pprint]]
                      [test :as ct]]
             [clojure.tools.logging :refer [info warn]]
@@ -7,15 +7,14 @@
 
 ;; Global/dynamic state
 
-(def core
-  "As a convenience, we keep a global client around and automatically spin it
-  upon the first request."
+(defonce ^{:doc "As a convenience, we keep a global client around and automatically spin it upon the first request."}
+  core
   (delay
     (c/start-core!)))
 
 (def ^:dynamic *core*
   "We make the core accessible as a dynamic variable, so that generators can
-  request it without having to thread arguments through every phase of
+  access it without having to thread arguments through every phase of
   generation."
   nil)
 

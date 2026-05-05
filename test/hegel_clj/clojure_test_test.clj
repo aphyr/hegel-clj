@@ -3,8 +3,8 @@
                      [test :refer :all]]
             [clojure.tools.logging :refer [info warn]]
             [hegel-clj [gen :as g]
-                                 [clojure-test :refer [with]]
-                                 [test :refer :all]])
+                       [clojure-test :refer [with]]
+                       [core :refer :all]])
   (:import (java.io StringWriter)))
 
 ; This namespace is a little weird. We're going to use clojure.test to test

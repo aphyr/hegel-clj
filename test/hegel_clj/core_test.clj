@@ -1,9 +1,8 @@
-(ns hegel-clj.test-test
+(ns hegel-clj.core-test
   (:require [clojure.test :refer :all]
             [clojure.tools.logging :refer [info warn]]
-            [hegel-clj [gen :as g]
-                                 [test :refer :all]])
-  (:import (java.nio ByteBuffer)))
+            [hegel-clj [core :refer :all]
+                       [gen :as g]]))
 
 (deftest run-test!-test
   (is (= {:health-check-failure? nil,

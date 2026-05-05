@@ -11,7 +11,7 @@
   (:require [clojure [core :as c]
                      [walk :refer [prewalk]]]
             [clojure.tools.logging :refer [info warn]]
-            [hegel-clj [test :as h]]
+            [hegel-clj [core :as h]]
             [hegel-clj.gen.proto :refer :all])
   (:import (clojure.lang PersistentList)
            (java.time LocalDate
@@ -374,7 +374,7 @@
 
 (defmacro let
   "Like Clojure's let, but when a right-hand side is a schema, draws a value
-  using hegel-clj.test/gen. This lets you mix generators and regular values.
+  using hegel-clj.core/gen. This lets you mix generators and regular values.
   For example:
 
       (gen/let [a (gen/integer) ; Drawn randomly by hegel-clj
@@ -387,11 +387,11 @@
                          ; We expand (let [a x] into
                          ; (let [lhs123 x
                          ;       a (if (instance? Schema lhs123)
-                         ;            (hegel-clj.test/gen lhs123)
+                         ;            (hegel-clj.core/gen lhs123)
                          ;            lhs123)]
                          `[~tmp-lhs ~rhs
                            ~lhs (if (satisfies? Schema ~tmp-lhs)
-                                  (hegel-clj.test/gen ~tmp-lhs)
+                                  (hegel-clj.core/gen ~tmp-lhs)
                                   ~tmp-lhs)])
                        (partition 2 binding-forms))]
        ~@body)))

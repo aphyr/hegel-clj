@@ -2,11 +2,11 @@
   "Compares hegel-clj to test.check."
   (:require [clojure [pprint :refer [pprint]]
                      [test :refer :all]]
-                    [clojure.test.check :as tc]
+            [clojure.test.check :as tc]
             [clojure.test.check [properties :as tcp]
                                 [generators :as tcg]]
-            [hegel-clj [gen :as hg]
-                                 [test :as h]]))
+            [hegel-clj [core :as h]
+                       [gen :as hg]]))
 
 (deftest bind-shrink-test
   ; In test.check, one of the awkward things that can happen is that using one

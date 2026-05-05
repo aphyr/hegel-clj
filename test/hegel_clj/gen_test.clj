@@ -2,9 +2,9 @@
   (:require [clojure [pprint :refer [pprint]]
                      [test :refer [deftest is]]]
             [clojure.tools.logging :refer [info warn]]
-            [hegel-clj [clojure-test :refer [with]]
-                                 [test :refer :all]
-                                 [gen :as g]]
+            [hegel-clj [core :refer :all]
+                       [clojure-test :refer [with]]
+                       [gen :as g]]
             [hegel-clj.gen.proto :as gp])
   (:import (java.nio ByteBuffer)
            (java.net InetAddress

@@ -2,7 +2,7 @@
   (:require [clojure.test :refer :all]
             [clojure.tools.logging :refer [info warn]]
             [hegel-clj [client :refer :all]
-                                 [gen :as g]])
+                       [gen :as g]])
   (:import (java.nio ByteBuffer)))
 
 (deftest serde-test
