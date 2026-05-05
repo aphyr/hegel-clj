@@ -6,9 +6,10 @@ along with generator composition via `let`, `fmap`, and `bind`. It has
 shrinking, final test case reporting, and test.check integration.
 
 This is usable, but early work--I haven't implemented many of Hegel's features,
-and there are a bunch of obvious user affordances missing (we have no recursive
-tree generator, for instance). I'm hoping to prove out whether this is actually
-*good* before going too far. Users and contributors welcome.
+and there are a bunch of obvious user affordances missing (we have no
+filtering, or recursive tree generator, for instance). I'm hoping to prove out
+whether this is actually *good* before going too far. Users and contributors
+welcome.
 
 Hegel-core is very new, the documentation is vague, and the daemon frequently
 crashes or gets stuck. It is not hard to write an incorrect or expensive
@@ -18,7 +19,7 @@ automatically kill and restart it.
 ## Installation
 
 Hegel-clj uses Hegel-core, which is a Python program. You'll need the
-[UV](https://docs.astral.sh/uv/) package manager, which we use to install and
+[uv](https://docs.astral.sh/uv/) package manager, which we use to install and
 run Hegel-core. Then add hegel-clj to your project dev dependencies:
 
 ```clj
