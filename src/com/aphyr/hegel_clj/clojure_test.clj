@@ -25,6 +25,16 @@
        ~@body)
      @reports#))
 
+(defn origin
+  "Produces an origin string for a set of reports. Hegel is... vague about what
+  the origin should be; you don't want to be *too* specific or else it will
+  explode the state space. I think just the file and line, perhaps?"
+  [reports]
+  (let [report (->> reports
+                    (remove (comp #{:pass} :type))
+                    first)]
+    (str (:file report) ":" (:line report))))
+
 (defmacro with
   "Can be embedded within a clojure.test deftest to generate some series of
   values and test whether they produce correct results. Takes an options map
@@ -67,8 +77,5 @@
                                {:status :valid}
                                ; Otherwise, tell Hegel about it.
                                {:status :interesting
-                                :origin (->> reports#
-                                             (remove (comp #{:pass} :type))
-                                             first
-                                             pr-str)})))]
+                                :origin (origin reports#)})))]
      res#))
