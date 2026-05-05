@@ -12,6 +12,7 @@
                                 LimitInputStream)
            (java.io ByteArrayInputStream
                     ByteArrayOutputStream
+                    Closeable
                     DataInputStream
                     DataOutputStream
                     EOFException
@@ -150,8 +151,8 @@
         (catch ExecutionException e
           (let [cause (ex-cause e)]
             (if (instance? HegelError cause)
-              (throw (HegelError. (.getMessage cause)
-                                  (.getData cause)
+              (throw (HegelError. (ex-message cause)
+                                  (ex-data cause)
                                   cause))
               (throw e))))))
   ([derefable timeout-ms]
@@ -163,8 +164,8 @@
         (catch ExecutionException e
           (let [cause (ex-cause e)]
             (if (instance? HegelError cause)
-              (throw (HegelError. (.getMessage cause)
-                                  (.getData cause)
+              (throw (HegelError. (ex-message cause)
+                                  (ex-data cause)
                                   cause))
               (throw e)))))))
 
@@ -274,7 +275,7 @@
 
 (defn gen-message-id!
   "Generates a fresh message ID for the given stream."
-  [core stream-id]
+  [^Core core stream-id]
   (let [ids (first (swap-vals! (.next-message-ids core)
                                update stream-id next-message-id))]
     (get ids stream-id)))
@@ -308,7 +309,8 @@
   []
   (try
     (let [process (.. (ProcessBuilder.
-                        (into-array ["uv" "tool" "run" "--from"
+                        (into-array String
+                                    ["uv" "tool" "run" "--from"
                                      (str "hegel-core==" core-version)
                                      "hegel"
                                      "--verbosity"
@@ -352,8 +354,8 @@
   (reset! (:running? core) false)
   (when-let [r (.reader core)]
     (future-cancel r))
-  (.close (.in core))
-  (.close (.out core))
+  (.close ^Closeable (.in core))
+  (.close ^Closeable (.out core))
   (.. ^Process (.process core)
       destroyForcibly
       waitFor))
@@ -366,7 +368,7 @@
   (dorun
     (for [[stream-id m] @(:replies core)
           [msg-id p] m]
-      (.completeExceptionally p exception))))
+      (.completeExceptionally ^CompletableFuture p exception))))
 
 (defmacro with-core
   "Evaluates body with a Hegel core bound."
@@ -430,7 +432,7 @@
 (defn ^ByteBuffer raw-packet->buf
   "Converts a RawPacket to a ByteBuffer."
   [^RawPacket packet]
-  (let [payload (.payload packet)
+  (let [^ByteBuffer payload (.payload packet)
         size    (+ 21 (.remaining payload))
         payload-position (.position payload)
         buf     (.. (ByteBuffer/allocate size)
@@ -440,14 +442,14 @@
                     (putInt 16 (.remaining payload))
                     (position 20)
                     (put payload)
-                    (put terminator)
+                    (put (unchecked-byte 0x0a)) ; Terminator
                     (position 0))
         ; Reset payload position
         _ (.position payload payload-position)
         ; Now we can compute the checksum
         checksum (checksum buf)
         buf (.. buf
-                (putInt 4 checksum)
+                (putInt 4 (unchecked-int checksum))
                 (position 0)
                 (limit size))]
     buf))
