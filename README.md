@@ -149,10 +149,10 @@ stuck to small numbers.
 
 ## Overview
 
-- [`hegel-clj.core`](/src/hegel-clj/core.clj) provides a friendly API to Hegel-clj, including dynamic state.
-- [`hegel.generator`](/src/hegel-clj/generator.clj) constructs generators of random values.
-- [`hegel.clojure-test`](/src/hegel-clj/clojure_test.clj) provides `clojure.test` integration.
-- [`hegel.client`](/src/hegel-clj/client.clj) is the internal client which spawns and talks to a Hegel-core daemon.
+- [`hegel-clj.core`](/src/hegel_clj/core.clj) provides a friendly API to Hegel-clj, including dynamic state.
+- [`hegel.generator`](/src/hegel_clj/generator.clj) constructs generators of random values.
+- [`hegel.clojure-test`](/src/hegel_clj/clojure_test.clj) provides `clojure.test` integration.
+- [`hegel.client`](/src/hegel_clj/client.clj) is the internal client which spawns and talks to a Hegel-core daemon.
 
 Your main entrypoint is generally either through a test integration namespace
 (like `hegel-clj.clojure-test/with`), or by starting a test using
@@ -174,7 +174,7 @@ in there too, if you want.
 
 ## Generators
 
-All generators live in [`hegel-clj.generator`](src/hegel-clj/generator.clj).
+All generators live in [`hegel-clj.generator`](src/hegel_clj/generator.clj).
 The basic generators are:
 
 - Scalars: `constant`, `boolean`, `integer`, `float`, `bytes`, `string`, `regex`, `symbol`, `keyword` (available in both simple and qualified variants)
