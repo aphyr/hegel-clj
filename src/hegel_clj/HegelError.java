@@ -1,4 +1,4 @@
-package com.aphyr.hegel_clj;
+package hegel_clj;
 
 import clojure.lang.IExceptionInfo;
 import clojure.lang.IPersistentMap;

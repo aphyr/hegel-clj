@@ -1,4 +1,4 @@
-(ns com.aphyr.hegel-clj.gen
+(ns hegel-clj.gen
   "Composable generators. These functions return a *schema*, which can be used
   with hegel-clj.test/gen to produce an actual value. We generally follow
   Hegel's protocol, but with a Clojure flavor: we use `vec` instead of `list`,
@@ -11,8 +11,8 @@
   (:require [clojure [core :as c]
                      [walk :refer [prewalk]]]
             [clojure.tools.logging :refer [info warn]]
-            [com.aphyr.hegel-clj [test :as h]]
-            [com.aphyr.hegel-clj.gen.proto :refer :all])
+            [hegel-clj [test :as h]]
+            [hegel-clj.gen.proto :refer :all])
   (:import (clojure.lang PersistentList)
            (java.time LocalDate
                       LocalDateTime
@@ -391,7 +391,7 @@
                          ;            lhs123)]
                          `[~tmp-lhs ~rhs
                            ~lhs (if (satisfies? Schema ~tmp-lhs)
-                                  (com.aphyr.hegel-clj.test/gen ~tmp-lhs)
+                                  (hegel-clj.test/gen ~tmp-lhs)
                                   ~tmp-lhs)])
                        (partition 2 binding-forms))]
        ~@body)))

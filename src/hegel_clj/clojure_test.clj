@@ -1,6 +1,6 @@
-(ns com.aphyr.hegel-clj.clojure-test
+(ns hegel-clj.clojure-test
   "Hegel integration with clojure.test."
-  (:require [com.aphyr.hegel-clj [gen :as g]
+  (:require [hegel-clj [gen :as g]
                                  [test :as h]]
             [clojure [pprint :refer [pprint]]
                      [test :as ct]]

@@ -2,7 +2,7 @@
 // We use this to feed the CBOR decoder payloads. We also update a CRC32 as we
 // go. Not thread-safe.
 
-package com.aphyr.hegel_clj;
+package hegel_clj;
 
 import java.io.IOException;
 import java.io.InputStream;

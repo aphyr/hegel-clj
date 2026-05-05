@@ -1,11 +1,11 @@
-(ns com.aphyr.hegel-clj.gen-test
+(ns hegel-clj.gen-test
   (:require [clojure [pprint :refer [pprint]]
                      [test :refer [deftest is]]]
             [clojure.tools.logging :refer [info warn]]
-            [com.aphyr.hegel-clj [clojure-test :refer [with]]
+            [hegel-clj [clojure-test :refer [with]]
                                  [test :refer :all]
                                  [gen :as g]]
-            [com.aphyr.hegel-clj.gen.proto :as gp])
+            [hegel-clj.gen.proto :as gp])
   (:import (java.nio ByteBuffer)
            (java.net InetAddress
                      Inet4Address

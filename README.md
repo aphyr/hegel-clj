@@ -17,7 +17,7 @@ Hegel-clj uses Hegel-core, which is a Python program. You'll need the
 run Hegel-core. Then add hegel-clj to your project dependencies:
 
 ```clj
-[[com.aphyr.hegel-clj "0.1.0"]]
+[[hegel-clj "0.1.0"]]
 ```
 
 ## Quickstart
@@ -28,7 +28,7 @@ the index of a value in a vector:
 ```clj
 (ns my-test
   (:require [clojure.test :refer :all]
-            [com.aphyr.hegel-clj [clojure-test :refer [with]]
+            [hegel-clj [clojure-test :refer [with]]
                                  [gen :as g]
                                  [test :refer :all]]))
 
@@ -189,8 +189,8 @@ different elements--likely without `42`.
 Hegel is able to shrink this example to a much more reasonable `[42]`:
 
 ```clj
-(require '[com.aphyr.hegel-clj.test :as h]
-         '[com.aphyr.hegel-clj.gen :as hg])
+(require '[hegel-clj.test :as h]
+         '[hegel-clj.gen :as hg])
 (-> (h/run-test! {:test-cases 1000
                   :seed       1777986545686}
                  (hg/let [size (hg/integer {:min 0, :max 128})

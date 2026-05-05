@@ -1,8 +1,8 @@
-(ns com.aphyr.hegel-clj.clojure-test-test
+(ns hegel-clj.clojure-test-test
   (:require [clojure [pprint :refer [pprint]]
                      [test :refer :all]]
             [clojure.tools.logging :refer [info warn]]
-            [com.aphyr.hegel-clj [gen :as g]
+            [hegel-clj [gen :as g]
                                  [clojure-test :refer [with]]
                                  [test :refer :all]])
   (:import (java.io StringWriter)))

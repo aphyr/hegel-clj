@@ -1,7 +1,7 @@
-(ns com.aphyr.hegel-clj.test-test
+(ns hegel-clj.test-test
   (:require [clojure.test :refer :all]
             [clojure.tools.logging :refer [info warn]]
-            [com.aphyr.hegel-clj [gen :as g]
+            [hegel-clj [gen :as g]
                                  [test :refer :all]])
   (:import (java.nio ByteBuffer)))
 

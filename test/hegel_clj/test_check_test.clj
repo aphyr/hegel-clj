@@ -1,11 +1,11 @@
-(ns com.aphyr.hegel-clj.test-check-test
+(ns hegel-clj.test-check-test
   "Compares hegel-clj to test.check."
   (:require [clojure [pprint :refer [pprint]]
                      [test :refer :all]]
                     [clojure.test.check :as tc]
             [clojure.test.check [properties :as tcp]
                                 [generators :as tcg]]
-            [com.aphyr.hegel-clj [gen :as hg]
+            [hegel-clj [gen :as hg]
                                  [test :as h]]))
 
 (deftest bind-shrink-test
