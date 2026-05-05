@@ -65,7 +65,7 @@
 (defmacro run-test!
   "Macro form of run-test!*; takes a body, rather than a function."
   [opts & body]
-  `(run-test!* ~opts (fn ~'case [] ~@body)))
+  `(run-test!* ~opts (bound-fn ~'case [] ~@body)))
 
 ;; Generators
 
