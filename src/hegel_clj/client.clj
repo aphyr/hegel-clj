@@ -1053,16 +1053,3 @@
               (deref-rethrow command-timeout)
               (get "result"))]
     (gen/post schema x)))
-
-;; Hegel-core loves to crash or get stuck, so we wrap it in the world's tiniest
-;; connection pool
-
-(defrecord Pool [core ; An atom to the current core.
-                 ]
-)
-
-(defmacro with-core
-  "Takes a binding vector of [core-sym pool]; binds core-sym to a core taken
-  from the given Pool for the duration of body."
-  [[core-sym pool] & body]
-  (let [

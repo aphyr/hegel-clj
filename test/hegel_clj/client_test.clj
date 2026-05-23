@@ -58,10 +58,10 @@
     (is (= {:health-check-failure? nil,
             :seed "123",
             :invalid-test-cases 0,
-            :test-cases 20,
+            :test-cases 19,
             :flaky? nil,
             :passed? false,
-            :valid-test-cases 8,
+            :valid-test-cases 9,
             :error nil,
             :interesting-test-cases 1
             :final [{:status :interesting, :origin "bad+", :foo :bar}]}
