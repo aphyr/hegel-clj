@@ -58,13 +58,15 @@
   (with {:test-cases 5} []
     (is (integer? (gen (g/integer))))
     (is (<= 4 (gen (g/integer {:min 4}))))
-    (is (<= -6 (gen (g/integer {:min -6 :max -3})) -3))))
+    (is (<= -6 (gen (g/integer {:min -6 :max -3})) -3))
+    (is (<= 120 (gen (g/integer 120 125)) 125))))
 
 (deftest float-test
   (with {:test-cases 5} []
     (is (float? (gen (g/float))))
     (is (<= 3.4 (gen (g/float {:min 3.4 :max 9.34})) 9.34))
-    (is (< 3.4 (gen (g/float {:min 3.4 :max 9.34 :exclude-min? true :exclude-max? true})) 9.34))))
+    (is (< 3.4 (gen (g/float {:min 3.4 :max 9.34 :exclude-min? true :exclude-max? true})) 9.34))
+    (is (<= 3.4 (gen (g/float 3.4 9.34)) 9.34))))
 
 (deftest string-test
   (with {:test-cases 50} []
@@ -263,7 +265,7 @@
 (deftest hmap-test
   (with {:test-cases 10}
     [person (g/hmap {:name (g/string)
-                     :age  (g/fmap (partial * 2) (g/integer))})]
+                     :age  (g/fmap (partial * 2) (g/integer 0 30))})]
     (is (map? person))
     (is (= #{:name :age} (set (keys person))))
     (is (string? (:name person)))

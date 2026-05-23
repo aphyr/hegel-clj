@@ -148,7 +148,9 @@
   ([opts]
    (schema "integer" {} opts
             :min "min_value"
-            :max "max_value")))
+            :max "max_value"))
+  ([min max]
+   (integer {:min min, :max max})))
 
 (defn float
   "Generates a floating-point number. Options:
@@ -170,7 +172,9 @@
            :exclude-max? "exclude_max"
            :nan?         "allow_nan"
            :infinity?    "allow_infinity"
-           :width        "width")))
+           :width        "width"))
+  ([min max]
+   (float {:min min, :max max})))
 
 (defn string
   "Generates a Unicode string. Options:
