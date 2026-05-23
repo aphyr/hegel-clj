@@ -357,7 +357,7 @@
 (deftest ^:focus recursive--test
   (with {:test-cases 10}
     [t (g/recursive- (g/integer) vec)]
-    (pprint t)
+    ;(pprint t)
     (let [leaf?   integer?
           branch? vector?
           valid? (fn valid? [node]
