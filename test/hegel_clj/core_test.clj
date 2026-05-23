@@ -11,7 +11,7 @@
           :test-cases 11,
           :flaky? nil,
           :passed? false,
-          :valid-test-cases 3,
+          :valid-test-cases 6,
           :error nil,
           :interesting-test-cases 1
           :final [{:status :interesting

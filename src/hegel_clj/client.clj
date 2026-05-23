@@ -27,12 +27,12 @@
 
 (def core-version
   "The version of hegel-core we ask uv for."
-  "0.7.0")
+  "0.9.1")
 
 (def core-version-string
   "What version string do we expect from Hegel-core? Weirdly this is *not* the
   same as the Hegel version."
-  "Hegel/0.13")
+  "Hegel/0.15")
 
 (def core-log-file
   "Where we dump Hegel-core's logs"
