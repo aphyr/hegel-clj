@@ -3,7 +3,8 @@
   (:require [clojure [pprint :refer [pprint]]
                      [test :as ct]]
             [clojure.tools.logging :refer [info warn]]
-            [hegel-clj [client :as c]]))
+            [hegel-clj [client :as c]])
+  (:import (clojure.lang ExceptionInfo)))
 
 ;; Global/dynamic state
 
@@ -22,6 +23,17 @@
   "As another convenience, we store the current test case stream ID so you
   don't have to thread it between test cases and calls to generate."
   nil)
+
+(def next-global-span-type
+  "The Core can generate span types, but we can also generate them globally
+  (e.g. at macroexpand time). We use this in g/let to start spans. Global spans
+  are negative."
+  (atom -1))
+
+(defn gen-global-span-type
+  "Generates a new global span. This is available at macroexpand time."
+  []
+  (swap! next-global-span-type dec))
 
 ;; Running tests
 
@@ -116,6 +128,40 @@
   [collection-id]
   (c/collection-reject! (or *client* @client) *test-case-stream-id*
                         collection-id))
+
+(defn gen-span-type!
+  "Returns a fresh span type for the current client."
+  []
+  (c/gen-span-type! (or *client* @client)))
+
+(defn start-span!
+  "Starts a span of the given type on the current client."
+  [span-type]
+  (c/start-span! (or *client* @client) *test-case-stream-id* span-type))
+
+(defn stop-span!
+  "Stops a span on the current client."
+  []
+  (c/stop-span! (or *client* @client) *test-case-stream-id*))
+
+(defmacro with-span
+  "Evaluates body with a span of the given type. If the body throws, I'm not
+  sure *what* to do; I'm going to try closing the span, but I imagine that's
+  probably asking for trouble sometimes."
+  [span-type & body]
+  `(do (start-span! ~span-type)
+       (try ~@body
+             (catch ExceptionInfo e#
+               (if (identical? :hegel-clj/stop-test (:type (ex-data e#)))
+                 ; If we try and stop a span after Hegel gets in this state
+                 ; you'll never get a response and everything breaks. This is
+                 ; fragile and bad. Maybe you just should never throw ever???
+                 (throw e#)
+                 (do ;(stop-span!)
+                     (throw e#))))
+             (catch Throwable t#
+               ;(stop-span!)
+               (throw t#)))))
 
 ;; Final cases and logging
 

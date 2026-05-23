@@ -258,6 +258,8 @@
                  replies
                  ; An atom for the next collection id
                  next-coll-id
+                 ; An atom for the next span type
+                 next-span-type
                  ])
 
 (defn next-stream-id
@@ -285,8 +287,12 @@
 (defn gen-coll-id!
   "Generates a unique collection ID."
   [^Core core]
-  (let [id (first (swap-vals! (.next-coll-id core) inc))]
-    id))
+  (first (swap-vals! (.next-coll-id core) inc)))
+
+(defn gen-span-type!
+  "Generates a unique type for a span."
+  [^Core core]
+  (first (swap-vals! (.next-span-type core) inc)))
 
 (defn request-message-id
   "Computes the request message ID for a given reply message ID."
@@ -1102,3 +1108,26 @@
                           "collection_id" collection-id}))
       (deref-rethrow command-timeout)
       (get "result")))
+
+(defn start-span!
+  "'Marks the start of a span of choices', says the docs. Takes a type integer,
+  which should ideally be the same between two different runs of the same,
+  uh... generator within a test. I don't fully understand this, but I know it
+  helps with shrinking."
+  [core stream-id span-type]
+  (-> core
+      (rpc! (CborPacket. stream-id (gen-message-id! core stream-id)
+                         {"command" "start_span"
+                          "label"   span-type}))
+      (deref-rethrow command-timeout))
+  span-type)
+
+(defn stop-span!
+  "'Marks the end of a span of choices', says the docs."
+  [core stream-id]
+  (info :stop-span)
+  (-> core
+      (rpc! (CborPacket. stream-id (gen-message-id! core stream-id)
+                         {"command" "stop_span"}))
+      (deref-rethrow command-timeout))
+  nil)

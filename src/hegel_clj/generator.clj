@@ -573,16 +573,18 @@
         ...)"
   [binding-forms & body]
   (assert (even? (count binding-forms)))
-  (c/let [tmp-lhs (gensym 'lhs)]
-    `(c/let [~@(mapcat (fn [[lhs rhs]]
-                         ; We expand (let [a x] into
-                         ; (let [lhs123 x
-                         ;       a (if (instance? Schema lhs123)
-                         ;            (hegel-clj.core/gen lhs123)
-                         ;            lhs123)]
-                         `[~tmp-lhs ~rhs
-                           ~lhs (if (satisfies? Schema ~tmp-lhs)
-                                  (hegel-clj.core/gen ~tmp-lhs)
-                                  ~tmp-lhs)])
-                       (partition 2 binding-forms))]
-       ~@body)))
+  (c/let [tmp-lhs   (gensym 'lhs)
+          span-type (h/gen-global-span-type)]
+    `(h/with-span ~span-type
+       (c/let [~@(mapcat (fn [[lhs rhs]]
+                           ; We expand (let [a x] into
+                           ; (let [lhs123 x
+                           ;       a (if (instance? Schema lhs123)
+                           ;            (hegel-clj.core/gen lhs123)
+                           ;            lhs123)]
+                           `[~tmp-lhs ~rhs
+                             ~lhs (if (satisfies? Schema ~tmp-lhs)
+                                    (hegel-clj.core/gen ~tmp-lhs)
+                                    ~tmp-lhs)])
+                         (partition 2 binding-forms))]
+         ~@body))))
