@@ -179,8 +179,8 @@ The basic generators are:
 - Scalars: `constant`, `boolean`, `integer`, `float`, `bytes`, `string`, `regex`, `symbol`, `keyword` (available in both simple and qualified variants)
 - Special strings: `email`, `domain`, `url-str`, `ip-address-str`
 - Dates and times: `local-date`, `local-time`, `local-date-time`, and their `-str` variants for ISO8601 strings.
-- Collections: `tuple`, `list`, `vector`, `set`, `sorted-set`, `map`,
-  `sorted-map`.
+- Collections: `tuple`, `hmap`, `list`, `vector`, `set`, `sorted-set`, `map`,
+  `sorted-map`
 
 There are also higher-order generators which transform or combine other
 generators.

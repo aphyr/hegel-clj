@@ -333,6 +333,19 @@
   ([a b c d] (tuple* [a b c d]))
   ([a b c d & rest] (tuple* (into [a b c d] rest))))
 
+(defn hmap
+  "Generates a heterogenous map. Takes a map of keys (any objects) to schemas,
+  and returns a schema which produces maps with those keys, and values drawn
+  from their corresponding schemas. For example:
+
+  (g/hmap {:name (g/string)
+  :age  (g/integer)})"
+  [m]
+  (c/let [ks (keys m)]
+    (fmap (fn post [vs]
+              (zipmap ks vs))
+            (tuple* (vals m)))))
+
 (defn email
   "Generates an email address as a string, per RFC 5322 section 3.4.1"
   []

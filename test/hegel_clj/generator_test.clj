@@ -254,6 +254,16 @@
     (is (every? vector? (t5 4)))
     (is (every? boolean? (mapcat identity (t5 4))))))
 
+(deftest hmap-test
+  (with {:test-cases 10}
+    [person (g/hmap {:name (g/string)
+                     :age  (g/fmap (partial * 2) (g/integer))})]
+    (prn person)
+    (is (map? person))
+    (is (= #{:name :age} (set (keys person))))
+    (is (string? (:name person)))
+    (is (even? (:age person)))))
+
 (deftest email-test
   (with {:test-cases 5} [e (g/email)]
     (is (re-find #"@" e))))
@@ -332,7 +342,6 @@
           (if (even? k)
             (assoc m k v)
             :hegel-clj/reject)))]
-    (pprint m)
     (is (map? m))
     (is (<= 1 (count m) 5))
     (is (every? even? (keys m)))
