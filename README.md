@@ -182,13 +182,13 @@ The basic generators are:
 - Special strings: `email`, `domain`, `url-str`, `ip-address-str`
 - Dates and times: `local-date`, `local-time`, `local-date-time`, and their
   `-str` variants for ISO8601 strings.
-- Collections: `tuple`, `hmap`, `list`, `vector`, `shuffle`, `set`,
-  `sorted-set`, `map`, `sorted-map`
+- Collections: `tuple`, `hmap`, `list`, `vector`, `set`, `sorted-set`, `map`,
+  `sorted-map`
 
 There are also higher-order generators which transform or combine other
 generators.
 
-- Transform values: `fmap`, `bind`
+- Transform values: `fmap`, `bind`, `shuffle`, `rand-nth`
 - Generate collections dynamically: `collect`
 
 Typically you'll find it most convenient to use `g/let`, which works just like

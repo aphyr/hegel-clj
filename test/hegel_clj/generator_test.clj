@@ -123,12 +123,17 @@
   (let [xs (vec (range 10))
         shuffled? (atom false)]
     (with {:test-cases 5, :seed 5}
-      [xs' (g/shuffle xs)]
+      [xs' (g/shuffle (g/constant xs))]
       (is (vector? xs'))
       (is (= xs (sort xs')))
       (when (not= xs xs')
         (reset! shuffled? true)))
     (is @shuffled?)))
+
+(deftest rand-nth-test
+  (with {:test-cases 10, :seed 5}
+    [x (g/rand-nth (g/constant (vec (range 10))))]
+    (is (<= 0 x 9))))
 
 (deftest list-test
   (with {:test-cases 10}

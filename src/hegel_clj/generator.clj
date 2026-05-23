@@ -7,7 +7,7 @@
   options.
 
   See https://hegel.dev/reference/protocol#schemas for details."
-  (:refer-clojure :exclude [boolean bytes float let list map set vector shuffle symbol keyword sorted-map sorted-set])
+  (:refer-clojure :exclude [boolean bytes float let list map set vector shuffle symbol keyword rand-nth sorted-map sorted-set])
   (:require [clojure [core :as c]
                      [walk :refer [prewalk]]]
             [clojure.tools.logging :refer [info warn]]
@@ -250,15 +250,28 @@
      (Vector. elements min-size max-size unique?))))
 
 (defn shuffle
-  "A schema which produces a shuffled version of the given vector. Since the
-  vector schema is *already* random, this is more useful for when you want to
-  generate a permutation of some elements you have locally."
-  [xs]
-  (assert (vector? xs))
-  (c/let [n (count xs)]
-    (fmap (partial mapv xs)
-          (vector {:size n, :unique? true}
-                  (integer 0 (dec n))))))
+  "A schema which produces a shuffled version of the given schema, which should
+  produce vectors. For instance:
+
+    (g/shuffle (g/constant [1 2 3]))"
+  [vector-schema]
+  (fmap (fn [xs]
+          (assert (vector? xs))
+          (c/let [n (count xs)]
+            (->> (h/gen (vector {:size n, :unique? true}
+                              (integer 0 (dec n))))
+                 (mapv xs))))
+        vector-schema))
+
+(defn rand-nth
+  "Takes a schema returning an nth-indexed collection of elements. Returns a
+  schema which selects a random element from them."
+  [vector-schema]
+  (fmap (fn [xs]
+          (assert (vector? xs))
+          (c/let [i (h/gen (integer 0 (dec (count xs))))]
+            (nth xs i)))
+        vector-schema))
 
 (defn list
   "Like vector, but returns lists."
