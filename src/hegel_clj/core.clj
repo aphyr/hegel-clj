@@ -98,7 +98,7 @@
   "Evaluates body up to n times, returning a vector of results. Useful for
   debugging generators."
   [n & body]
-  `(sample* (bound-fn ~'sample [] ~@body)))
+  `(sample* ~n (bound-fn ~'sample [] ~@body)))
 
 (defn new-collection!
   "See client/new-collection!"
