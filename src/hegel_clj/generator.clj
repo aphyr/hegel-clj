@@ -7,7 +7,7 @@
   options.
 
   See https://hegel.dev/reference/protocol#schemas for details."
-  (:refer-clojure :exclude [boolean bytes float let list map set vector symbol keyword sorted-map sorted-set])
+  (:refer-clojure :exclude [boolean bytes float let list map set vector shuffle symbol keyword sorted-map sorted-set])
   (:require [clojure [core :as c]
                      [walk :refer [prewalk]]]
             [clojure.tools.logging :refer [info warn]]
@@ -248,6 +248,17 @@
    (c/let [min-size (or min-size size)
          max-size (or max-size size)]
      (Vector. elements min-size max-size unique?))))
+
+(defn shuffle
+  "A schema which produces a shuffled version of the given vector. Since the
+  vector schema is *already* random, this is more useful for when you want to
+  generate a permutation of some elements you have locally."
+  [xs]
+  (assert (vector? xs))
+  (c/let [n (count xs)]
+    (fmap (partial mapv xs)
+          (vector {:size n, :unique? true}
+                  (integer 0 (dec n))))))
 
 (defn list
   "Like vector, but returns lists."
