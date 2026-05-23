@@ -353,3 +353,15 @@
     (is (<= 1 (count m) 5))
     (is (every? even? (keys m)))
     (is (every? string? (vals m)))))
+
+(deftest ^:focus recursive--test
+  (with {:test-cases 10}
+    [t (g/recursive- (g/integer) vec)]
+    (pprint t)
+    (let [leaf?   integer?
+          branch? vector?
+          valid? (fn valid? [node]
+                   (or (leaf? node)
+                       (and (branch? node)
+                            (every? valid? node))))]
+      (is (valid? t)))))

@@ -496,6 +496,49 @@
              (fn ~'collect [~coll-sym]
                ~@body)))
 
+(defn fn-or-schema->fn
+  "Turns a zero-arity function or a schema into a zero-arity function which
+  generates values."
+  [f-or-schema]
+  (if (satisfies? Schema f-or-schema)
+    (fn gen [] (h/gen f-or-schema))
+    f-or-schema))
+
+(defn recursive-helper
+  "Inner loop for recursive-"
+  [leaf branch depth]
+  ; I'm not entirely sure which way `boolean` shrinks, but IIRC any-of shrinks
+  ; towards the first option.
+  (if (and (pos? depth)
+           (= :branch (h/gen (one-of (constant :leaf) (constant :branch)))))
+    (c/let [nodes (collect [nodes [] {:min-size 0, :max-size 10}]
+                           (c/let [node (recursive-helper
+                                          leaf branch (dec depth))]
+                             (if (identical? :hegel-clj/reject node)
+                             node
+                             (conj nodes node))))]
+      (branch nodes))
+    ; Leaf
+    (c/let [node (leaf)]
+      node)))
+
+(defn recursive-
+  "EXERIMENTAL! Produces recursive data structures using arbitrary functions.
+  Takes two functions: `(leaf)`, which produces a leaf node, and `(branch
+  nodes)`, which takes a vector of nodes and produces a branch node. Either
+  function can return `hegel.clj/reject` to reject a generated element.
+
+  Leaf can optionally be a schema, instead of a function.
+
+  I'm not really sure what the right shape is for this yet; might change later."
+  [leaf branch]
+  ; It's convenient for us to accept either schemas or functions.
+  (c/let [leaf (fn-or-schema->fn leaf)
+          res  (recursive-helper leaf branch 5)]
+    (if (identical? :hegel-clj/reject res)
+      (recur leaf branch)
+      res)))
+
 (defmacro let
   "Like Clojure's let, but when a right-hand side is a schema, draws a value
   using hegel-clj.core/gen. This lets you mix generators and regular values.
