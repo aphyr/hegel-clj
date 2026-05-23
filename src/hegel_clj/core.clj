@@ -84,6 +84,39 @@
   [schema]
   (c/generate! (or *client* @client) *test-case-stream-id* schema))
 
+(defn sample*
+  "Samples up to `n` values from the provided function `(f)`, which presumably
+  calls `gen`. Helpful for debugging generators."
+  [n f]
+  (let [out (atom [])]
+    (run-test! {:test-cases n}
+               (swap! out conj (f))
+               {:status :valid})
+    @out))
+
+(defmacro sample
+  "Evaluates body up to n times, returning a vector of results. Useful for
+  debugging generators."
+  [n & body]
+  `(sample* (bound-fn ~'sample [] ~@body)))
+
+(defn new-collection!
+  "See client/new-collection!"
+  [opts]
+  (c/new-collection! (or *client* @client) *test-case-stream-id* opts))
+
+(defn collection-more?
+  "See client/collection-more?"
+  [collection-id]
+  (c/collection-more? (or *client* @client) *test-case-stream-id*
+                      collection-id))
+
+(defn collection-reject!
+  "See client/collection-reject!"
+  [collection-id]
+  (c/collection-reject! (or *client* @client) *test-case-stream-id*
+                        collection-id))
+
 ;; Final cases and logging
 
 (defn final?

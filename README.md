@@ -181,7 +181,12 @@ The basic generators are:
 - Dates and times: `local-date`, `local-time`, `local-date-time`, and their `-str` variants for ISO8601 strings.
 - Collections: `tuple`, `list`, `vector`, `set`, `sorted-set`, `map`,
   `sorted-map`.
-- Higher-order generators: `fmap`, `bind`
+
+There are also higher-order generators which transform or combine other
+generators.
+
+- Transform values: `fmap`, `bind`
+- Generate collections dynamically: `collect`
 
 Typically you'll find it most convenient to use `g/let`, which works just like
 Clojure `let`, but when provided with a generator schema on the right hand
@@ -236,6 +241,9 @@ finds a small map with this property: `{0 0, 1 0}`.
 
 If you prefer, you can explicitly generate a value from a schema at any time
 during a test case with `hegel-clj.core/gen`.
+
+
+### Transforming Generators
 
 There are also two higher-order generators, `fmap` and `bind`, which are
 helpful for producing composable generators you can pass around. The `fmap`
@@ -307,6 +315,32 @@ The generators API is built with `->>` composition in mind; schemas are usually
 placed in the final argument. Of course you could write this more plainly with
 `g/let`, but this definition of `matrix` is a composable object you can re-use
 in other generators.
+
+### Collections
+
+The basic collection generators can generate maps, vectors, etc. in a single
+shot. However, you might have a generator which cannot be expressed directly as
+a schema, because your code needs to make decisions about what generator
+functions to call. For instance, a sorted map where keys are never equal to
+their values:
+
+```clj
+(require '[hegel-clj [core :as h]
+                     [generator :as g]])
+(h/sample 5
+  (g/collect [m (sorted-map) {:min-size 1, :max-size 10}]
+    (g/let [k (g/integer {:min 0 :max 10})
+            v (g/integer {:min 0 :max 10})]
+      (if (= k v)
+        :hegel-clj/reject
+        (assoc m k v)))))
+[{6 2} {6 0, 7 6, 10 2} {0 10, 1 2, 6 3} {2 5, 3 7, 4 0, 5 3, 8 9, 10 8} {1 4, 7 5}]
+```
+
+`collect` produces a collection by starting with an initial value (here,
+`(sorted-map)`, binding it to `m`, and then evaluating the body several times,
+each time returning either an expanded collection (e.g. with some elements
+added) or choosing to reject the generated elements with `:hegel-clj/reject`.
 
 ## We Have Generative Tests At Home
 

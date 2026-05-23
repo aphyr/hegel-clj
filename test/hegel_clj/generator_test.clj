@@ -323,3 +323,17 @@
     (is (keyword? k))
     (is (simple-keyword? uk))
     (is (qualified-keyword? qk))))
+
+(deftest collection-test
+  (with {:test-cases 10}
+    [m (g/collect [m (sorted-map) {:min-size 1, :max-size 5}]
+        (g/let [k (g/integer)
+                v (g/string)]
+          (if (even? k)
+            (assoc m k v)
+            :hegel-clj/reject)))]
+    (pprint m)
+    (is (map? m))
+    (is (<= 1 (count m) 5))
+    (is (every? even? (keys m)))
+    (is (every? string? (vals m)))))

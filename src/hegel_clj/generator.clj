@@ -431,6 +431,46 @@
   []
   (fmap c/keyword (symbol)))
 
+(defn collect*
+  "Generates a variably-sized collection, with a function. Takes an option map,
+  an initial value for the collection, and a function `(expand coll) => coll'`
+  which adds an element to coll, presuambly by generating values. `expand`
+  should return either a new collection (which is fed to the next call to
+  `expand`, or the special value `:hegel-clj/reject`, which signals that you'd
+  like to skip whatever was generated."
+  [opts init expand]
+  (c/let [coll-id (h/new-collection! opts)]
+    (loop [coll init]
+      (if (h/collection-more? coll-id)
+        (c/let [coll' (expand coll)]
+          (if (identical? coll' :hegel-clj/reject)
+            ; Not today, Satan!
+            (do (h/collection-reject! coll-id)
+                (recur coll))
+            (recur coll')))
+        ; Done
+        coll))))
+
+(defmacro collect
+  "Syntax for generating a variably-sized collection. Takes a binding vector
+  `[coll-name initial-value]`, and a body. Invokes body multiple times,
+  beginning with `coll-name` bound to `initial-value`, and expects body to
+  evaluate to either a new value for `coll`, or the special value
+  `:hegel-clj/reject`, which means that you'd like to skip whatever element you
+  generated. The binding vector can optionally include a map of options. To
+  generate a sorted map of even integers to strings:
+
+      (g/collect [m (sorted-map) {:min-size 1, :max-size 10}]
+        (g/let [k (g/integer)
+                v (g/string)]
+          (if (even? k)
+            (assoc m k v)
+            :hegel-clj/reject)))"
+  [[coll-sym init & [opts]] & body]
+  `(collect* ~opts ~init
+             (fn ~'collect [~coll-sym]
+               ~@body)))
+
 (defmacro let
   "Like Clojure's let, but when a right-hand side is a schema, draws a value
   using hegel-clj.core/gen. This lets you mix generators and regular values.

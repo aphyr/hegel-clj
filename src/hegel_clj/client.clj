@@ -256,6 +256,8 @@
                  ; CompletableFutures which should be delivered with the
                  ; payloads of replies.
                  replies
+                 ; An atom for the next collection id
+                 next-coll-id
                  ])
 
 (defn next-stream-id
@@ -279,6 +281,12 @@
   (let [ids (first (swap-vals! (.next-message-ids core)
                                update stream-id next-message-id))]
     (get ids stream-id)))
+
+(defn gen-coll-id!
+  "Generates a unique collection ID."
+  [^Core core]
+  (let [id (first (swap-vals! (.next-coll-id core) inc))]
+    id))
 
 (defn request-message-id
   "Computes the request message ID for a given reply message ID."
@@ -325,7 +333,8 @@
                   :next-stream-id   (atom 1)
                   :next-message-ids (atom {0 0})
                   :stream-handlers  (atom {})
-                  :replies          (atom {})})]
+                  :replies          (atom {})
+                  :next-coll-id     (atom 0)})]
       ; If we crash here, we need to tear down everything
       (try
         ; Start reader thread
@@ -1053,3 +1062,43 @@
               (deref-rethrow command-timeout)
               (get "result"))]
     (gen/post schema x)))
+
+(defn new-collection!
+  "Asks core to create a new collection. Takes a Core, a stream id, and
+  options. Returns a collection id, which you should use to ask for more
+  elements, or reject elements.
+
+      {:min-size 3
+       :max-size 6}"
+  [core stream-id {:keys [min-size max-size]}]
+  (let [coll-id (gen-coll-id! core)]
+    (-> core
+        (rpc! (CborPacket. stream-id (gen-message-id! core stream-id)
+                           (cond-> {"command" "new_collection"}
+                             min-size (assoc "min_size" min-size)
+                             max-size (assoc "max_size" max-size))))
+        (deref-rethrow command-timeout)
+        (get "result"))))
+
+(defn collection-more?
+  "Asks core if we should produce another element for the given collection ID.
+  Takes a Core, stream ID, and collection ID. Returns true iff we should
+  generate another element."
+  [core stream-id collection-id]
+  (-> core
+      (rpc! (CborPacket. stream-id (gen-message-id! core stream-id)
+                         {"command" "collection_more"
+                          "collection_id" collection-id}))
+      (deref-rethrow command-timeout)
+      (get "result")))
+
+(defn collection-reject!
+  "Informs core that we didn't like the last element it generated for the given
+  collection ID. Takes a Core, stream ID, and collection ID."
+  [core stream-id collection-id]
+  (-> core
+      (rpc! (CborPacket. stream-id (gen-message-id! core stream-id)
+                         {"command" "collection_reject"
+                          "collection_id" collection-id}))
+      (deref-rethrow command-timeout)
+      (get "result")))
