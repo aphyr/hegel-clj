@@ -107,7 +107,10 @@
 (defn constant
   "A schema that always generates `x`. Internally we ask Hegel to generate 0
   every time, and return `x` locally; that way we can return arbitrary
-  objects."
+  objects.
+
+  TODO: I think this is bad; we probably need to send up unique integers so
+  Hegel can do unique constraints on vectors."
   [x]
   (fmap (fn [_] x) (constant* 0)))
 
@@ -518,7 +521,8 @@
   [[coll-sym init & [opts]] & body]
   `(collect* ~opts ~init
              (fn ~'collect [~coll-sym]
-               ~@body)))
+               (h/with-span
+                 ~@body))))
 
 (defn fn-or-schema->fn
   "Turns a zero-arity function or a schema into a zero-arity function which
@@ -573,9 +577,8 @@
         ...)"
   [binding-forms & body]
   (assert (even? (count binding-forms)))
-  (c/let [tmp-lhs   (gensym 'lhs)
-          span-type (h/gen-global-span-type)]
-    `(h/with-span ~span-type
+  (c/let [tmp-lhs   (gensym 'lhs)]
+    `(h/with-span
        (c/let [~@(mapcat (fn [[lhs rhs]]
                            ; We expand (let [a x] into
                            ; (let [lhs123 x

@@ -30,7 +30,7 @@
   are negative."
   (atom -1))
 
-(defn gen-global-span-type
+(defn gen-global-span-type!
   "Generates a new global span. This is available at macroexpand time."
   []
   (swap! next-global-span-type dec))
@@ -144,7 +144,7 @@
   []
   (c/stop-span! (or *client* @client) *test-case-stream-id*))
 
-(defmacro with-span
+(defmacro with-span*
   "Evaluates body with a span of the given type. If the body throws, I'm not
   sure *what* to do; I'm going to try closing the span, but I imagine that's
   probably asking for trouble sometimes."
@@ -162,6 +162,13 @@
              (catch Throwable t#
                ;(stop-span!)
                (throw t#)))))
+
+(defmacro with-span
+  "Evaluates body with a span. Generates a unique span type at macroexpand
+  time."
+  [& body]
+  (let [type (gen-global-span-type!)]
+    `(with-span* ~type ~@body)))
 
 ;; Final cases and logging
 
