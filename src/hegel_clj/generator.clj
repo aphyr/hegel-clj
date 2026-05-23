@@ -98,10 +98,18 @@
             (h/gen schema)))
         schema))
 
-(defn constant
-  "Always generates `x`."
+(defn constant*
+  "Always generates `x`. This schema passes the value up to Hegel-core, so it
+  must be something that round-trips through CBOR."
   [x]
   (schema* "constant" {"value" x}))
+
+(defn constant
+  "A schema that always generates `x`. Internally we ask Hegel to generate 0
+  every time, and return `x` locally; that way we can return arbitrary
+  objects."
+  [x]
+  (fmap (fn [_] x) (constant* 0)))
 
 (defrecord OneOf [gens]
   Schema

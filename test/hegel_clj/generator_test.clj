@@ -35,6 +35,12 @@
           (is (every? float? floats))
           )))
 
+(deftest constant-test
+  (with {:test-cases 2}
+    [x (g/constant 1N)]
+    (is (instance? clojure.lang.BigInt x))
+    (is (= 1N x))))
+
 (deftest one-of-test
   (with {:test-cases 5}
     [x (g/one-of (g/boolean) (g/float))]
@@ -258,7 +264,6 @@
   (with {:test-cases 10}
     [person (g/hmap {:name (g/string)
                      :age  (g/fmap (partial * 2) (g/integer))})]
-    (prn person)
     (is (map? person))
     (is (= #{:name :age} (set (keys person))))
     (is (string? (:name person)))
