@@ -1,27 +1,24 @@
 (ns hegel-clj.core
-  "The ain API for hegel-clj."
+  "The main API for hegel-clj."
   (:require [clojure [pprint :refer [pprint]]
+                     [string :as str]
                      [test :as ct]]
-            [clojure.tools.logging :refer [info warn]]
-            [hegel-clj [client :as c]])
-  (:import (clojure.lang ExceptionInfo)))
+            [clojure.tools.logging :refer [info warn]])
+  (:import (clojure.lang ExceptionInfo)
+           (dev.hegel Generator
+                      HealthCheck
+                      Hegel
+                      Mode
+                      Phase
+                      Settings
+                      TestCase
+                      Verbosity)))
 
 ;; Global/dynamic state
 
-(defonce ^{:doc "As a convenience, we keep a global client around and automatically spin it upon the first request."}
-  client
-  (delay
-    (c/start-core!)))
-
-(def ^:dynamic *client*
-  "We make the client accessible as a dynamic variable, so that generators can
-  access it without having to thread arguments through every phase of
-  generation."
-  nil)
-
-(def ^:dynamic *test-case-stream-id*
-  "As another convenience, we store the current test case stream ID so you
-  don't have to thread it between test cases and calls to generate."
+(def ^:dynamic ^TestCase *test-case*
+  "It's convenient to have an implicitly bound test case, so one can simply
+  call (draw! generator) instead of threading the test case through."
   nil)
 
 (def next-global-span-type
@@ -37,29 +34,35 @@
 
 ;; Running tests
 
-(defn run-test!*
-  "Runs a test. This version is more functional; for a more convenient,
-  stateful version, use deftest. Options are:
+(defn test-fn!
+  "Runs a test. This version is more functional; see run! for the macro form.
+  Options are:
+
+      :database       A hegel.Database
+      :derandomize?   Whether to force deterministic (or not) input selection.
+      :mode           Either :test-run (the default) or :single-test-case. See
+                      dev.hegel.Mode.
+      :name           The string name of the property being tested.
+
+      :report-multiple-failures?
+                      If set, Hegel will keep searching for additional distinct
+                      failures after the first.
+
+      :seed           A Long random seed
+
+      :suppress-health-checks
+                      A collection of health check keywords to
+                      suppress: any of :test-cases-too-large, :filter-too-much,
+                      :too-slow, :large-initial-test-case
 
       :test-cases     The number of test cases to run
-      :seed           A random seed
-      :derandomize    If true, and seed is not set, derives a deterministic
-                      seed from database-key
-      :database-key   A stable database key for this test
-      :database       A path to the DB directory
-      :suppress-health-check  A vector of health check keywords to suppress:
-                              any of :test-cases-too-large, :filter-too-much,
-                              :too-slow, :large-initial-test-case
+
+      :verbosity      One of :debug, :normal, :quiet, or :verbose.
 
   Takes a function `(case-fn)` which will be invoked approximately `test-cases`
-  times, with zero arguments. This function can call `(gen/int)` etc. to
-  generate values, and should return a map which explains whether the case was
-  valid or not:
-
-      {:status :valid}
-      {:status :invalid}
-      {:status :interesting
-       :origin \"...\"}
+  times, with a TestCase argument. This case will also be bound to *test-case*
+  for the duration of the function. This function can call `(draw gen)` to
+  generate values. As a side effect, it should either return a value, or throw.
 
   Returns a map describing the results of the test, of the form:
 
@@ -73,134 +76,135 @@
       :health-check-failure?  Did a health check fail during the test?
 
   May also throw an exception map like {:type :hegel-error, :message \"...\"}."
-  [opts case-fn]
-  (let [client @client]
-    (c/run-test! client opts
-                 (fn stream-id-wrapper [stream-id]
-                   (binding [*client*              client
-                             *test-case-stream-id* stream-id]
-                     (case-fn))))))
+  [{:keys [database
+           derandomize?
+           health-checks
+           mode
+           name
+           phases
+           report-multiple-failures?
+           seed
+           suppress-health-checks
+           test-cases
+           verbosity
+           ]}
+   case-fn]
+  (let [mode (case mode
+               :single-test-case Mode/SINGLE_TEST_CASE
+               :test-run         Mode/TEST_RUN
+               nil               nil)
 
-(defmacro run-test!
-  "Macro form of run-test!*; takes a body, rather than a function."
+        phases (when-not (nil? phases)
+                 (mapv (fn [phase]
+                       (case phase
+                         :explicit Phase/EXPLICIT
+                         :generate Phase/GENERATE
+                         :reuse  Phase/REUSE
+                         :shrink Phase/SHRINK
+                         :target Phase/TARGET))
+                     phases))
+
+        health-checks
+        (when-not (nil? health-checks)
+          (mapv (fn [health-check]
+                  (case health-check
+                    :filter-too-much         HealthCheck/FILTER_TOO_MUCH
+                    :large-initial-test-case HealthCheck/LARGE_INITIAL_TEST_CASE
+                    :test-cases-too-large    HealthCheck/TEST_CASES_TOO_LARGE
+                    :too-slow                HealthCheck/TOO_SLOW))
+                health-checks))
+
+        verbosity (case verbosity
+                    :debug   Verbosity/DEBUG
+                    :normal  Verbosity/NORMAL
+                    :quiet   Verbosity/QUIET
+                    :verbose Verbosity/VERBOSE
+                    nil      nil)
+
+        settings
+        (cond-> (Settings.)
+          database     (.database database)
+          derandomize? (.derandomize derandomize?)
+          mode         (.mode mode)
+          name         (.name name)
+          phases       (.phases (into-array Phase phases))
+
+          (not (nil? report-multiple-failures?))
+          (.reportMultipleFailures report-multiple-failures?)
+
+          suppress-health-checks
+          (.suppressHealthCheck
+            (into-array HealthCheck suppress-health-checks))
+
+          test-cases (.testCases test-cases)
+          verbosity  (.verbosity verbosity))]
+    (Hegel/test
+      (fn wrapper [test-case]
+        (binding [*test-case* test-case]
+          (case-fn test-case)))
+      settings)))
+
+(defmacro test!
+  "Macro form of test-fn!; takes a body, rather than a function."
   [opts & body]
-  `(run-test!* ~opts (bound-fn ~'case [] ~@body)))
+  `(test-fn! ~opts (bound-fn ~'case [~'_] ~@body)))
 
-;; Generators
+;; Working with test cases
 
-(defn gen
-  "Generates a random value from the provided schema. Use `hegel-clj.gen` to
-  construct a schema, like so:
+(defn assume!
+  "Rejects the current test case unless the given condition holds."
+  ([condition]
+   (assume! *test-case* condition)))
 
-      (gen (gen/one-of (gen/boolean) (gen/integer)))"
-  [schema]
-  (c/generate! (or *client* @client) *test-case-stream-id* schema))
+(defn target!
+  "Guides Hegel by reporting that something interesting has happened during
+  this test case. Higher numbers are more interesting. Takes an optional label;
+  either a string, or any object, which will be converted to a string with
+  `pr-str`."
+  ([^double value]
+   (.target *test-case* value))
+  ([^double value, label]
+   (.target *test-case* value
+            (if (string? label)
+              label
+              (pr-str label)))))
 
-(defn sample*
-  "Samples up to `n` values from the provided function `(f)`, which presumably
-  calls `gen`. Helpful for debugging generators."
-  [n f]
+(defn note!
+  "Records a debug message which is shown only on the final replay of a failing
+  case."
+  ([msg]
+   (.note *test-case* msg))
+  ([msg & more]
+   (.note (str/join " " (cons msg more)))))
+
+;; Generating values
+
+(defn draw!
+  "Given a generator, draws a randomly selected value. Optionally takes a
+  label, which will be used to describe the value in the final output. Label
+  may be either a string, or converted to one with `pr-str`."
+  ([^Generator gen]
+   (.draw *test-case* gen))
+  ([^Generator gen, label]
+   (.draw *test-case* gen
+          (if (string? label)
+            label
+            (pr-str label)))))
+
+(defn sample
+  "Samples up to `n` values from the provided generator. Helpful for debugging
+  generators."
+  [n gen]
   (let [out (atom [])]
-    (run-test! {:test-cases n}
-               (swap! out conj (f))
-               {:status :valid})
+    (test! {:test-cases n}
+           (swap! out conj (draw! gen))
+           {:status :valid})
     @out))
 
-(defmacro sample
-  "Evaluates body up to n times, returning a vector of results. Useful for
-  debugging generators."
-  [n & body]
-  `(sample* ~n (bound-fn ~'sample [] ~@body)))
-
-(defn new-collection!
-  "See client/new-collection!"
-  [opts]
-  (c/new-collection! (or *client* @client) *test-case-stream-id* opts))
-
-(defn collection-more?
-  "See client/collection-more?"
-  [collection-id]
-  (c/collection-more? (or *client* @client) *test-case-stream-id*
-                      collection-id))
-
-(defn collection-reject!
-  "See client/collection-reject!"
-  [collection-id]
-  (c/collection-reject! (or *client* @client) *test-case-stream-id*
-                        collection-id))
-
-(defn gen-span-type!
-  "Returns a fresh span type for the current client."
-  []
-  (c/gen-span-type! (or *client* @client)))
-
-(defn start-span!
-  "Starts a span of the given type on the current client."
-  [span-type]
-  (c/start-span! (or *client* @client) *test-case-stream-id* span-type))
-
-(defn stop-span!
-  "Stops a span on the current client."
-  []
-  (c/stop-span! (or *client* @client) *test-case-stream-id*))
-
-(defmacro with-span*
-  "Evaluates body with a span of the given type. If the body throws, I'm not
-  sure *what* to do; I'm going to try closing the span, but I imagine that's
-  probably asking for trouble sometimes."
-  [span-type & body]
-  `(do (start-span! ~span-type)
-       (try ~@body
-             (catch ExceptionInfo e#
-               (if (identical? :hegel-clj/stop-test (:type (ex-data e#)))
-                 ; If we try and stop a span after Hegel gets in this state
-                 ; you'll never get a response and everything breaks. This is
-                 ; fragile and bad. Maybe you just should never throw ever???
-                 (throw e#)
-                 (do ;(stop-span!)
-                     (throw e#))))
-             (catch Throwable t#
-               ;(stop-span!)
-               (throw t#)))))
-
-(defmacro with-span
-  "Evaluates body with a span. Generates a unique span type at macroexpand
-  time."
-  [& body]
-  (let [type (gen-global-span-type!)]
-    `(with-span* ~type ~@body)))
-
-;; Final cases and logging
+;; Final phase
 
 (defn final?
-  "Returns true iff we're in the final pass of a test case."
+  "Is Hegel in the final phase of a test?"
   []
-  c/*final-case?*)
-
-(defmacro when-final
-  "Evaluates body only if this is a final test case. Helpful for logging."
-  [& body]
-  `(when c/*final-case?*
-     ~@body))
-
-(defmacro finfo
-  "Logging macro. Calls core.logging/info, but only when in a final test
-  run."
-  [& args]
-  `(when-final (info ~@args)))
-
-(defmacro fwarn
-  "Logging macro. Calls core.logging/warn, but only when in a final test
-  run."
-  [& args]
-  `(when-final (warn ~@args)))
-
-(defmacro fprn
-  "Like clojure prn, but only when in a final test run."
-  [& args]
-  `(when-final (prn ~@args)))
-
-(defmacro fpprint
-  "Like clojure pprint, but only when in a final test run."
-  [& args]
-  `(when-final (pprint ~@args)))
+  ; sigh
+  false)

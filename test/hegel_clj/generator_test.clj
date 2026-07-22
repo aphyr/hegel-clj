@@ -4,8 +4,7 @@
             [clojure.tools.logging :refer [info warn]]
             [hegel-clj [core :refer :all]
                        [clojure-test :refer [with]]
-                       [generator :as g]]
-            [hegel-clj.generator.proto :as gp])
+                       [generator :as g]])
   (:import (java.nio ByteBuffer)
            (java.net InetAddress
                      Inet4Address
@@ -13,14 +12,6 @@
            (java.time LocalDate
                       LocalDateTime
                       LocalTime)))
-
-(deftest integer-schema-test
-  (is (= {"type" "integer"}
-         (gp/->map (g/integer))))
-  (is (= {"type" "integer"
-          "min_value" 4
-          "max_value" 7}
-         (gp/->map (g/integer {:min 4 :max 7})))))
 
 (deftest bind-test
   (let [s (g/bind (fn [size]
@@ -35,18 +26,18 @@
           (is (every? float? floats))
           )))
 
-(deftest constant-test
+(deftest just-test
   (with {:test-cases 2}
-    [x (g/constant 1N)]
+    [x (g/just 1N)]
     (is (instance? clojure.lang.BigInt x))
     (is (= 1N x))))
 
 (deftest one-of-test
   (with {:test-cases 5}
-    [x (g/one-of (g/boolean) (g/float))]
+    [x (g/one-of [(g/boolean) (g/float)])]
     (is (or (boolean? x) (float? x)))
 
-    (g/let [x (g/one-of (g/list (g/integer)) (g/set (g/integer)))]
+    (g/let [x (g/one-of [(g/list (g/integer)) (g/set (g/integer))])]
       (is (or (list? x) (set? x)))
       (is (every? integer? x)))))
 
@@ -56,21 +47,21 @@
 
 (deftest integer-test
   (with {:test-cases 5} []
-    (is (integer? (gen (g/integer))))
-    (is (<= 4 (gen (g/integer {:min 4}))))
-    (is (<= -6 (gen (g/integer {:min -6 :max -3})) -3))
-    (is (<= 120 (gen (g/integer 120 125)) 125))))
+    (is (integer? (draw! (g/integer))))
+    (is (<= 4     (draw! (g/integer {:min 4}))))
+    (is (<= -6    (draw! (g/integer {:min -6 :max -3})) -3))
+    (is (<= 120   (draw! (g/integer 120 125)) 125))))
 
 (deftest float-test
   (with {:test-cases 5} []
-    (is (float? (gen (g/float))))
-    (is (<= 3.4 (gen (g/float {:min 3.4 :max 9.34})) 9.34))
-    (is (< 3.4 (gen (g/float {:min 3.4 :max 9.34 :exclude-min? true :exclude-max? true})) 9.34))
-    (is (<= 3.4 (gen (g/float 3.4 9.34)) 9.34))))
+    (is (float? (draw! (g/float))))
+    (is (<= 3.4 (draw! (g/float {:min 3.4 :max 9.34})) 9.34))
+    (is (< 3.4  (draw! (g/float {:min 3.4 :max 9.34 :exclude-min? true :exclude-max? true})) 9.34))
+    (is (<= 3.4 (draw! (g/float 3.4 9.34)) 9.34))))
 
 (deftest string-test
   (with {:test-cases 50} []
-    (is (string? (gen (g/string))))
+    (is (string? (draw! (g/string))))
     (g/let [^String s (g/string {:min-size 4 :max-size 6})]
       (is (string? s))
       (is (<= 4 (.codePointCount s 0 (.length s)) 6)))))
@@ -82,25 +73,25 @@
     (is (bytes? b2))
     (is (<= 5 10) (alength b2))))
 
-(deftest regex-test
+(deftest regex-str-test
   (with {:test-cases 10} []
     (doseq [pattern [#"abc"
                      #"\w*"
                      #"rege(x(es)?|xps?)\Z"
                      #"^[^x]{2,5}x+$"
                      #"^\"/\\$"]]
-      (g/let [s (g/regex pattern)]
+      (g/let [s (g/regex-str pattern)]
         (is (re-find pattern s))))
-    (g/let [s (g/regex #"[0-9]+" {:full-match? true})]
+    (g/let [s (g/regex-str #"[0-9]+" {:full-match? true})]
       (is (re-find #"^\d+$" s)))
     ; Digits are frustrating; Python \d generates all Unicode digits by
     ; default, which is *not* what you'd expect from Java.
-    (g/let [s (g/regex "(?a)^\\d+$")]
+    (g/let [s (g/regex-str "(?a)^\\d+$")]
       (is (re-find #"^\d+$" s)))))
 
 (deftest vector-test
   (with {:test-cases 10}
-        [any    (g/vector (g/one-of (g/float) (g/integer)))
+        [any    (g/vector (g/one-of [(g/float) (g/integer)]))
          short  (g/vector {:max-size 5} (g/boolean))
          long   (g/vector {:min-size 3} (g/integer))
          unique (g/vector {:min-size 3, :max-size 7, :unique? true} (g/string))]
@@ -119,25 +110,9 @@
     (is (every? string? unique))
     (is (distinct? unique))))
 
-(deftest shuffle-test
-  (let [xs (vec (range 10))
-        shuffled? (atom false)]
-    (with {:test-cases 5, :seed 5}
-      [xs' (g/shuffle (g/constant xs))]
-      (is (vector? xs'))
-      (is (= xs (sort xs')))
-      (when (not= xs xs')
-        (reset! shuffled? true)))
-    (is @shuffled?)))
-
-(deftest rand-nth-test
-  (with {:test-cases 10, :seed 5}
-    [x (g/rand-nth (g/constant (vec (range 10))))]
-    (is (<= 0 x 9))))
-
 (deftest list-test
   (with {:test-cases 10}
-        [any    (g/list (g/one-of (g/float) (g/integer)))
+        [any    (g/list (g/one-of [(g/float) (g/integer)]))
          short  (g/list {:max-size 5} (g/boolean))
          long   (g/list {:min-size 3} (g/integer))
          unique (g/list {:min-size 3, :max-size 7, :unique? true} (g/string))]
@@ -158,7 +133,7 @@
 
 (deftest set-test
   (with {:test-cases 10}
-        [any    (g/set (g/one-of (g/float) (g/integer)))
+        [any    (g/set (g/one-of [(g/float) (g/integer)]))
          short  (g/set {:max-size 5} (g/boolean))
          long   (g/set {:min-size 3} (g/integer))]
         (is (set? any))
@@ -174,7 +149,7 @@
 
 (deftest sorted-set-test
   (with {:test-cases 10}
-        [any    (g/sorted-set (g/one-of (g/float) (g/integer)))
+        [any    (g/sorted-set (g/one-of [(g/float) (g/integer)]))
          short  (g/sorted-set {:max-size 5} (g/boolean))
          long   (g/sorted-set {:min-size 3} (g/integer))]
         (is (sorted? any))
@@ -219,7 +194,6 @@
      small (g/sorted-map {:max-size 6} (g/string) (g/boolean))
      large (g/sorted-map {:min-size 2} (g/integer) (g/set (g/boolean)))
      ]
-    (fprn m)
     (is (map? m))
     (is (sorted? m))
     (is (every? integer? (keys m)))
@@ -306,9 +280,8 @@
 
 (defn ipv6?
   [addr]
-  (fprn (InetAddress/getByName addr))
   (or (instance? Inet6Address (InetAddress/getByName addr))
-      ; Note that ::ffff:0:0 get mapped to v4 0.0.0.0. Thanks Java.
+      ; Note that ::ffff:0:0 gets mapped to v4 0.0.0.0. Thanks Java.
       (re-find #"^::ffff:" addr)))
 
 (deftest ip-address-test
@@ -316,7 +289,6 @@
     [a  (g/ip-address-str)
      a4 (g/ip-address-str 4)
      a6 (g/ip-address-str 6)]
-    (fprn a6)
     (is (or (ipv4? a) (ipv6? a)))
     (is (ipv4? a4))
     (is (ipv6? a6))))
@@ -356,28 +328,3 @@
     (is (keyword? k))
     (is (simple-keyword? uk))
     (is (qualified-keyword? qk))))
-
-(deftest collection-test
-  (with {:test-cases 10}
-    [m (g/collect [m (sorted-map) {:min-size 1, :max-size 5}]
-        (g/let [k (g/integer)
-                v (g/string)]
-          (if (even? k)
-            (assoc m k v)
-            :hegel-clj/reject)))]
-    (is (map? m))
-    (is (<= 1 (count m) 5))
-    (is (every? even? (keys m)))
-    (is (every? string? (vals m)))))
-
-(deftest recursive--test
-  (with {:test-cases 10}
-    [t (g/recursive- (g/integer) vec)]
-    ;(pprint t)
-    (let [leaf?   integer?
-          branch? vector?
-          valid? (fn valid? [node]
-                   (or (leaf? node)
-                       (and (branch? node)
-                            (every? valid? node))))]
-      (is (valid? t)))))

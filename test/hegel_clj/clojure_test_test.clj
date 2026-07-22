@@ -43,7 +43,7 @@
                     :pass
                     :fail))
     ; Print out only the smallest vectors that make this fail
-    (fprn :final-xs xs)
+    (when (final?) (prn :final-xs xs))
     ; Is sorting the same as reversing? Clearly not, so this will fail,
     ; likely with a two-element vector of different numbers.
     (is (= (sort xs)
@@ -54,6 +54,7 @@
     ; Note that we only tell clojure.test about the shrunk case.
     (is (= [[:fail [0 1] [[1 0]]]]
            (mapv (juxt :type :expected :actual) reports)))
+    ; This will be broken until we get back Hegel's final? mode
     (is (= ":final-xs [0 1]\n" out))
     (is (= "" err))))
 

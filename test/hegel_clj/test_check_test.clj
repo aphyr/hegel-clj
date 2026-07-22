@@ -31,13 +31,13 @@
                     (hg/bind (fn [size]
                                (hg/vector {:min-size size, :max-size size}
                                           (hg/integer)))))
-        h-res (h/run-test! {:test-cases 1000
-                            :seed       1777986545686}
-                           (hg/let [xs h-ints]
-                             {:xs     xs
-                              :status (if (not-any? #{42} xs)
-                                        :valid
-                                        :interesting)}))
+        h-res (h/test! {:test-cases 1000
+                        :seed       1777986545686}
+                       (hg/let [xs h-ints]
+                         {:xs     xs
+                          :status (if (not-any? #{42} xs)
+                                    :valid
+                                    :interesting)}))
         h-smallest (-> h-res :final first :xs)
         ; Ah, much better
         _ (is (= [42] h-smallest))]))

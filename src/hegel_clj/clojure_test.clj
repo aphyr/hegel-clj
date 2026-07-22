@@ -4,7 +4,8 @@
                        [core :as h]]
             [clojure [pprint :refer [pprint]]
                      [test :as ct]]
-            [clojure.tools.logging :refer [info warn]]))
+            [clojure.tools.logging :refer [info warn]])
+  (:import (org.opentest4j AssertionFailedError)))
 
 (defn pass?
   "Did every clojure.test report pass?"
@@ -19,7 +20,7 @@
   `(let [og-report# ct/report
          reports# (atom [])
          report# (fn ~'report [event#]
-                   (h/when-final (og-report# event#))
+                   (when (h/final?) (og-report# event#))
                    (swap! reports# conj event#))]
      (binding [ct/report report#]
        ~@body)
@@ -38,12 +39,12 @@
 (defmacro with
   "Can be embedded within a clojure.test deftest to generate some series of
   values and test whether they produce correct results. Takes an options map
-  for `hegel-clj.test/run-test!*`, a binding vector, then a body. Evaluates
+  for `hegel-clj.test/test!*`, a binding vector, then a body. Evaluates
   body roughly `test-cases` times, with bindings provided by
-  `hegel-clj.gen/let`. You can generate more values using `gen` or
+  `hegel-clj.gen/let`. You can generate more values using `draw!` or
   `hegel-clj/let`, if needed. Make test assertions using `clojure.test/is`, as
   usual. Failing tests will be automatically shrunk and re-run with minimal
-  examples. Log these examples using `fprn` and friends, or `when-final`.
+  examples. Log these examples using `note`.
 
   For example:
 
@@ -65,17 +66,17 @@
   where you just happened to guess the right small inputs to reproduce a
   failing bug."
   [opts bindings & body]
-  `(let [res# (h/run-test! ~opts
-                           ; Generate values and evaluate body, recording
-                           ; clojure.test reports
-                           (let [reports# (capture-reports
-                                            (g/let ~bindings
-                                              ~@body))]
-                             ; If every clojure.test assertion passed, this test
-                             ; case does too.
-                             (if (pass? reports#)
-                               {:status :valid}
-                               ; Otherwise, tell Hegel about it.
-                               {:status :interesting
-                                :origin (origin reports#)})))]
+  `(let [res# (h/test! ~opts
+                       ; Generate values and evaluate body, recording
+                       ; clojure.test reports
+                       (let [reports# (capture-reports
+                                        (g/let ~bindings
+                                          ~@body))]
+                         ; If every clojure.test assertion passed, this test
+                         ; case does too.
+                         (if (pass? reports#)
+                           nil
+                           ; Otherwise, tell Hegel about it.
+                           (throw (AssertionFailedError.
+                                    (origin reports#))))))]
      res#))

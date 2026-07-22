@@ -6,7 +6,8 @@
             [hegel-clj [core :as h]
                        [generator :as g]]))
 
-(deftest lots-of-stop-tests
+; TODO: Port this to the new Hegel API
+#_(deftest lots-of-stop-tests
   ; Hegel likes to send stop_test commands in the middle of a test case for no
   ; apparent reason. This makes it almost impossible to generate large, complex
   ; data structures.
