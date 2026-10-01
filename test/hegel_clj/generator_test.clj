@@ -13,6 +13,13 @@
                       LocalDateTime
                       LocalTime)))
 
+(deftest fmap-test
+  (with {:test-cases 10}
+        [x (g/fmap (partial vector :meow) (g/string))]
+    (is (vector? x))
+    (is (= :meow (first x)))
+    (is (string? (second x)))))
+
 (deftest bind-test
   (let [s (g/bind (fn [size]
                     (g/tuple (g/vector {:size size} (g/integer))
