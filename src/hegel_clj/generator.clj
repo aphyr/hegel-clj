@@ -71,7 +71,7 @@
 (defn filter
   "Filters a generator to produce only values which pass (f x)."
   [f ^Generator gen]
-  (.filter f gen))
+  (.filter gen f))
 
 (defn composite-fn
   "A generator which builds a value by making imperative draws from a test

@@ -26,6 +26,20 @@
           (is (every? float? floats))
           )))
 
+(deftest composite-test
+  (with {:test-cases 50}
+    [x (g/composite
+         [:hi (draw! (g/float))])]
+    (is (vector? x))
+    (is (= 2 (count x)))
+    (is (= :hi (first x)))
+    (is (float? (second x)))))
+
+(deftest filter-test
+  (with {:test-cases 50}
+    [x (g/filter even? (g/integer))]
+    (is (even? x))))
+
 (deftest just-test
   (with {:test-cases 2}
     [x (g/just 1N)]
@@ -328,12 +342,3 @@
     (is (keyword? k))
     (is (simple-keyword? uk))
     (is (qualified-keyword? qk))))
-
-(deftest composite-test
-  (with {:test-cases 50}
-    [x (g/composite
-         [:hi (draw! (g/float))])]
-    (is (vector? x))
-    (is (= 2 (count x)))
-    (is (= :hi (first x)))
-    (is (float? (second x)))))
