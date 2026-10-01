@@ -231,3 +231,18 @@
   "Is Hegel in the final phase of a test?"
   []
   (.isFinal *test-case*))
+
+(defn fprn
+  "Wrapper for (when (final?) (prn ...))"
+  [& args]
+  (when (final?) (apply prn args)))
+
+(defn fpp
+  "Wrapper for (when (final?) (pprint x))"
+  [x]
+  (when (final?) (pprint x)))
+
+(defmacro finfo
+  "Wrapper for (when (final?) (info ...))"
+  [& args]
+  `(when (final?) (info ~@args)))
