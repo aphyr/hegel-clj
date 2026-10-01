@@ -158,10 +158,10 @@
    (cond-> (Generators/floats)
      (not (nil? infinity?))     (.allowInfinity infinity?)
      (not (nil? nan?))          (.allowNan nan?)
-     (not (nil? exclude-min?))  (.excludeMin exclude-min?)
-     (not (nil? exclude-max?))  (.excludeMin exclude-max?)
      min                        (.min min)
-     max                        (.max max)))
+     max                        (.max max)
+     (not (nil? exclude-min?))  (.excludeMin exclude-min?)
+     (not (nil? exclude-max?))  (.excludeMin exclude-max?)))
   ([min max]
    (float {:min min, :max max})))
 

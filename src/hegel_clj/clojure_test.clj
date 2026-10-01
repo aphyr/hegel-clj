@@ -42,7 +42,7 @@
   for `hegel-clj.test/test!*`, a binding vector, then a body. Evaluates
   body roughly `test-cases` times, with bindings provided by
   `hegel-clj.gen/let`. You can generate more values using `draw!` or
-  `hegel-clj/let`, if needed. Make test assertions using `clojure.test/is`, as
+  `hegel-clj.gen/let`, if needed. Make test assertions using `clojure.test/is`, as
   usual. Failing tests will be automatically shrunk and re-run with minimal
   examples. Log these examples using `note`.
 

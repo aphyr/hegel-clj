@@ -5,11 +5,13 @@
                      [test :as ct]]
             [clojure.tools.logging :refer [info warn]])
   (:import (clojure.lang ExceptionInfo)
-           (dev.hegel Generator
+           (dev.hegel Failure
+                      Generator
                       HealthCheck
                       Hegel
-                      Mode
                       Phase
+                      Reporter
+                      RunReport
                       Settings
                       TestCase
                       Verbosity)))
@@ -34,14 +36,25 @@
 
 ;; Running tests
 
+(defn failure->map
+  "Converts a Hegel test case Failure to a Clojure map of the form:
+
+      {:draws
+       :exception
+       :reproduce-blob
+       :caveat}"
+  [^Failure f]
+  {:draws (.draws f)
+   :exception (.exception f)
+   :reproduce-blob (.reproduceBlob f)
+   :caveat (.caveat f)})
+
 (defn test-fn!
   "Runs a test. This version is more functional; see run! for the macro form.
   Options are:
 
       :database       A hegel.Database
       :derandomize?   Whether to force deterministic (or not) input selection.
-      :mode           Either :test-run (the default) or :single-test-case. See
-                      dev.hegel.Mode.
       :name           The string name of the property being tested.
 
       :report-multiple-failures?
@@ -79,7 +92,6 @@
   [{:keys [database
            derandomize?
            health-checks
-           mode
            name
            phases
            report-multiple-failures?
@@ -89,12 +101,7 @@
            verbosity
            ]}
    case-fn]
-  (let [mode (case mode
-               :single-test-case Mode/SINGLE_TEST_CASE
-               :test-run         Mode/TEST_RUN
-               nil               nil)
-
-        phases (when-not (nil? phases)
+  (let [phases (when-not (nil? phases)
                  (mapv (fn [phase]
                        (case phase
                          :explicit Phase/EXPLICIT
@@ -125,24 +132,38 @@
         (cond-> (Settings.)
           database     (.database database)
           derandomize? (.derandomize derandomize?)
-          mode         (.mode mode)
           name         (.name name)
           phases       (.phases (into-array Phase phases))
 
           (not (nil? report-multiple-failures?))
           (.reportMultipleFailures report-multiple-failures?)
 
+          seed (.seed seed)
           suppress-health-checks
           (.suppressHealthCheck
             (into-array HealthCheck suppress-health-checks))
 
           test-cases (.testCases test-cases)
-          verbosity  (.verbosity verbosity))]
-    (Hegel/test
-      (fn wrapper [test-case]
-        (binding [*test-case* test-case]
-          (case-fn test-case)))
-      settings)))
+          verbosity  (.verbosity verbosity))
+          reporter (Reporter/silent)
+          report (Hegel/run
+                (fn wrapper [test-case]
+                  (binding [*test-case* test-case]
+                    (case-fn test-case)))
+                settings
+                reporter)]
+    {:passed?  (.passed report)
+     :status    (.status report)
+     :statistics (let [statistics (.statistics report)]
+                   {:total (.total statistics)
+                    :valid (.valid statistics)
+                    :invalid (.invalid statistics)
+                    :overrun (.overrun statistics)
+                    :interesting (.interesting statistics)})
+     :error      (.error report)
+     :health-check-failed? (.healthCheckFailed report)
+     :failures (map failure->map (.failures report))}
+    ))
 
 (defmacro test!
   "Macro form of test-fn!; takes a body, rather than a function."
@@ -206,5 +227,4 @@
 (defn final?
   "Is Hegel in the final phase of a test?"
   []
-  ; sigh
-  false)
+  (.isFinal *test-case*))

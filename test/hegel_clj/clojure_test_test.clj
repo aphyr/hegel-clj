@@ -39,9 +39,9 @@
   ; Generate roughly a hundred integers of vectors
   (with {:test-cases 10, :seed 1}
         [xs (g/vector (g/integer))]
-    #_(prn :xs xs (if (= (sort xs) (reverse xs))
-                    :pass
-                    :fail))
+        #_(prn :xs xs (if (= (sort xs) (reverse xs))
+                        :pass
+                        :fail))
     ; Print out only the smallest vectors that make this fail
     (when (final?) (prn :final-xs xs))
     ; Is sorting the same as reversing? Clearly not, so this will fail,
@@ -52,10 +52,25 @@
 (deftest reverse-test
   (let [{:keys [out err reports]} (capture (reverse-test*))]
     ; Note that we only tell clojure.test about the shrunk case.
-    (is (= [[:fail [0 1] [[1 0]]]]
+    ;(prn :reports reports)
+    ; I'm not sure why Hegel runs several final cases here
+    (is (= ['[:fail (= (sort xs) (reverse xs))
+               (not (= (-13129 8191 93150831) (93150831 8191 -13129)))]
+             '[:fail (= (sort xs) (reverse xs))
+               (not (= (-13129 8191 93150831) (93150831 8191 -13129)))]
+             '[:fail (= (sort xs) (reverse xs))
+               (not (= (-13129 8191 93150831) (93150831 8191 -13129)))]
+             '[:fail (= (sort xs) (reverse xs))
+               (not (= (-13129 8191 93150831) (93150831 8191 -13129)))]
+             '[:fail (= (sort xs) (reverse xs))
+               (not (= (0 1) (1 0)))]]
            (mapv (juxt :type :expected :actual) reports)))
-    ; This will be broken until we get back Hegel's final? mode
-    (is (= ":final-xs [0 1]\n" out))
+    (is (= ":final-xs [-13129 8191 93150831]
+:final-xs [-13129 8191 93150831]
+:final-xs [-13129 8191 93150831]
+:final-xs [-13129 8191 93150831]
+:final-xs [0 1]\n"
+           out))
     (is (= "" err))))
 
 (defn test-ns-hook

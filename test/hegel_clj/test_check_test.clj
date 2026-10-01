@@ -32,12 +32,9 @@
                                (hg/vector {:min-size size, :max-size size}
                                           (hg/integer)))))
         h-res (h/test! {:test-cases 1000
-                        :seed       1777986545686}
+                        :seed       1}
                        (hg/let [xs h-ints]
-                         {:xs     xs
-                          :status (if (not-any? #{42} xs)
-                                    :valid
-                                    :interesting)}))
-        h-smallest (-> h-res :final first :xs)
+                         (assert (not-any? #{42} xs))))
+        ;_ (pprint h-res)
         ; Ah, much better
-        _ (is (= [42] h-smallest))]))
+        _ (is (= {"xs" [42]} (:draws (first (:failures h-res)))))]))
