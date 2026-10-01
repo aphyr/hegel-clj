@@ -6,7 +6,7 @@
             [hegel-clj [core :as h]
                        [generator :as g]]))
 
-; TODO: Port this to the new Hegel API
+; Uncomment this later to file a bug with the hegel folks?
 #_(deftest lots-of-stop-tests
   ; Hegel likes to send stop_test commands in the middle of a test case for no
   ; apparent reason. This makes it almost impossible to generate large, complex
@@ -14,30 +14,26 @@
   (let [; Let's say we wanted to generate a long list of operations. Each
         ; operation is an integer and a string--just two calls to `generate`
         ; here.
-        gen-op (fn []
+        gen-op (fn [_]
                  (g/let [a (g/integer)
-                         b (g/string)]
-                   [a b]))
-        ; Now let's try to make a big collection like this, using Hegel's
-        ; `new_collection`.
+                         b (g/string)
+                         c (g/vector (g/integer))]
+                   [a b c]))
+        ; Now let's try to make a big collection of operations.
         gen-ops (fn []
-                  (try
-                    (g/collect [ops [] {:min-size 50, :max-size 1000}]
-                               (conj ops (gen-op)))
-                    (catch clojure.lang.ExceptionInfo e
-                      (prn "Caught" (ex-data e))
-                      (throw e))
-                    (catch Throwable t
-                      (prn "Caught" (class t) (.getMessage t)))))
+                  (h/draw! (g/vector {:min-size 50, :max-size 1000}
+                                     (g/composite-fn gen-op))))
         attempts (atom 0)
         counts (atom [])
         ; Try a thousand cases of that
-        res (h/run-test! {:seed 1
-                          :test-cases 1000}
-                         (swap! attempts inc)
-                         (let [ops (gen-ops)]
-                           (swap! counts conj (count ops))
-                           {:status :valid}))]
-    (pprint res)
-    (println @attempts "attempts," (count @counts) "completely generated histories")
-    (pprint (into (sorted-map) (frequencies @counts)))))
+        res (h/test! {:seed 1
+                      :test-cases 1000}
+                     (swap! attempts inc)
+                     (let [ops (gen-ops)]
+                       (swap! counts conj (count ops))))]
+    ;(pprint res)
+    ;(println @attempts "attempts," (count @counts) "completely generated histories")
+    ;(pprint (into (sorted-map) (frequencies @counts)))))
+    (is (:passed? res))
+    ; We should have generated at least some long histories
+    (is (< 500 (reduce max 0 @counts)))))
