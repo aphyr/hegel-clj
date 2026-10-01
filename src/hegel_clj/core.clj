@@ -214,12 +214,15 @@
 
 (defn sample
   "Samples up to `n` values from the provided generator. Helpful for debugging
-  generators."
-  [n gen]
-  (let [out (atom [])]
-    (test! {:test-cases n}
-           (swap! out conj (draw! gen))
-           {:status :valid})
+  generators. Can either take a number of values, or a map passed to `test!`,
+  which is helpful if you want to pass a deterministic seed etc."
+  [n-or-opts gen]
+  (let [out (atom [])
+        test-opts (if (integer? n-or-opts)
+                    {:test-cases n-or-opts}
+                    n-or-opts)]
+    (test! test-opts
+           (swap! out conj (draw! gen)))
     @out))
 
 ;; Final phase

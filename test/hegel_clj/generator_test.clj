@@ -47,6 +47,17 @@
     [x (g/filter even? (g/integer))]
     (is (even? x))))
 
+(deftest deferred-test
+  (let [leaf   (g/integer 0 9)
+        tree   (g/deferred)]
+    (g/set-deferred! tree (g/one-of [leaf (g/vector tree)]))
+    (is (= [0
+            1
+            [9]
+            0
+            [1 [] [] 1 [[2 [[]] 2 2 3 [9] 3 8 6] [9]] [] 7 7 4]]
+           (sample {:test-cases 5, :seed 13} tree)))))
+
 (deftest just-test
   (with {:test-cases 2}
     [x (g/just 1N)]
