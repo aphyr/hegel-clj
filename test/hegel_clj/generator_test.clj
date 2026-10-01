@@ -11,7 +11,8 @@
                      Inet6Address)
            (java.time LocalDate
                       LocalDateTime
-                      LocalTime)))
+                      LocalTime)
+           (java.util.concurrent TimeUnit)))
 
 (deftest fmap-test
   (with {:test-cases 10}
@@ -373,3 +374,10 @@
     (is (keyword? k))
     (is (simple-keyword? uk))
     (is (qualified-keyword? qk))))
+
+(deftest for-type-test
+  (with {:test-cases 5}
+    [i  (g/for-type Integer)
+     tu (g/for-type TimeUnit)]
+    (is (integer? i))
+    (is (instance? TimeUnit tu))))

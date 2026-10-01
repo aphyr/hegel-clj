@@ -507,6 +507,14 @@
   []
   (fmap c/keyword (symbol)))
 
+(defn for-type
+  "Produces a generator for the given JVM datatype, using reflection. Supports
+  scalars like Integer, Long, Boolean, Float, Double, String, Byte[], etc. Also
+  supports JVM enums, records (recursively), and collections like List, Set,
+  Optional, and Map, though I don't know how to actually *use* that feature yet."
+  [class]
+  (Generators/forType class))
+
 (defmacro let
   "Like Clojure's let, but when a right-hand side is a Generator, draws a value
   using hegel-clj.core/draw!. This lets you mix generators and regular values.
