@@ -80,6 +80,13 @@
   [f]
   (Generators/composite f))
 
+(defmacro composite
+  "Wrapper for composite-fn. Takes a body which returns a value, presumably
+  through calls to hegel.core/draw! or let, and returns a Generator which
+  evaluates that body to produce values."
+  [& body]
+  `(composite-fn (fn ~'composite [test-case#] ~@body)))
+
 (defn deferred
   "Like a promise for Generators. Constructs a forward reference for building
   self-recursive or mutually-recursive generators. Use `(set-deferred! deferred

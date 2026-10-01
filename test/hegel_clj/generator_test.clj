@@ -328,3 +328,12 @@
     (is (keyword? k))
     (is (simple-keyword? uk))
     (is (qualified-keyword? qk))))
+
+(deftest composite-test
+  (with {:test-cases 50}
+    [x (g/composite
+         [:hi (draw! (g/float))])]
+    (is (vector? x))
+    (is (= 2 (count x)))
+    (is (= :hi (first x)))
+    (is (float? (second x)))))
