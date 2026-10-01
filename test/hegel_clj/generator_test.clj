@@ -73,6 +73,11 @@
       (is (or (list? x) (set? x)))
       (is (every? integer? x)))))
 
+(deftest sampled-from-test
+  (with {:test-cases 10}
+    [x (g/sampled-from [:x 9 "hi"])]
+    (is (#{:x 9 "hi"} x))))
+
 (deftest boolean-test
   (with {:test-cases 5} [g (g/boolean)]
     (is (boolean? g))))
@@ -85,11 +90,19 @@
     (is (<= 120   (draw! (g/integer 120 125)) 125))))
 
 (deftest float-test
-  (with {:test-cases 5} []
+  (with {:test-cases 50} []
     (is (float? (draw! (g/float))))
     (is (<= 3.4 (draw! (g/float {:min 3.4 :max 9.34})) 9.34))
     (is (< 3.4  (draw! (g/float {:min 3.4 :max 9.34 :exclude-min? true :exclude-max? true})) 9.34))
     (is (<= 3.4 (draw! (g/float 3.4 9.34)) 9.34))))
+
+(deftest double-test
+  (with {:test-cases 50} []
+    (is (double? (draw! (g/double))))
+    (is (<= 3.4 (draw! (g/double {:min 3.4 :max 9.34})) 9.34))
+    (is (< 3.4  (draw! (g/double {:min 3.4 :max 9.34 :exclude-min? true :exclude-max? true})) 9.34))
+    (is (<= 3.4 (draw! (g/double 3.4 9.34)) 9.34))))
+
 
 (deftest string-test
   (with {:test-cases 50} []

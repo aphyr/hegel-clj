@@ -157,8 +157,7 @@
       :exclude-min? Exclude the minimum value
       :exclude-max? Exclude the maximum value
       :nan?         Whether to allow NaNs
-      :infinity?    Whether to allow infinity
-      :width        Bit width: 32 or 64"
+      :infinity?    Whether to allow infinity"
   ([]
    (Generators/floats))
   ([{:keys [infinity? nan? min max exclude-min? exclude-max?]}]
@@ -180,18 +179,17 @@
       :exclude-min? Exclude the minimum value
       :exclude-max? Exclude the maximum value
       :nan?         Whether to allow NaNs
-      :infinity?    Whether to allow infinity
-      :width        Bit width: 32 or 64"
+      :infinity?    Whether to allow infinity"
   ([]
    (Generators/doubles))
   ([{:keys [infinity? nan? min max exclude-min? exclude-max?]}]
    (cond-> (Generators/doubles)
      (not (nil? infinity?))     (.allowInfinity infinity?)
      (not (nil? nan?))          (.allowNan nan?)
-     (not (nil? exclude-min?))  (.excludeMin exclude-min?)
-     (not (nil? exclude-max?))  (.excludeMin exclude-max?)
      min                        (.min min)
-     max                        (.max max)))
+     max                        (.max max)
+     (not (nil? exclude-min?))  (.excludeMin exclude-min?)
+     (not (nil? exclude-max?))  (.excludeMin exclude-max?)))
   ([min max]
    (double {:min min, :max max})))
 
