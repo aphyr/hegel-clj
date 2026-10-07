@@ -180,22 +180,25 @@
     )))
 
 (defmacro test!
-  "Macro form of test-fn!; takes a body, rather than a function."
+  "Main entry point for running tests. This is the macro form of test-fn!;
+  takes a body, rather than a function."
   [opts & body]
   `(test-fn! ~opts (bound-fn ~'case [~'_] ~@body)))
 
 (defn run-stateful!
   "Within a test case, asks Hegel to run a stateful test over the given
-  datatype. See hegel.dev.Stateful for details."
+  object. See hegel.dev.Stateful for details."
   [state]
-  (Stateful/run state, *test-case*))
+  (Stateful/run state *test-case*))
 
 ;; Working with test cases
 
 (defn assume!
   "Rejects the current test case unless the given condition holds."
   ([condition]
-   (assume! *test-case* condition)))
+   (.assume *test-case* condition))
+  ([^TestCase test-case condition]
+   (.assume test-case condition)))
 
 (defn target!
   "Guides Hegel by reporting that something interesting has happened during
@@ -208,6 +211,11 @@
    (.target *test-case* value
             (if (string? label)
               label
+              (pr-str label))))
+  ([^TestCase test-case, ^double value, label]
+   (.target test-case label
+            (if (string? label)
+              label
               (pr-str label)))))
 
 (defn note!
@@ -215,8 +223,8 @@
   case."
   ([msg]
    (.note *test-case* msg))
-  ([msg & more]
-   (.note (str/join " " (cons msg more)))))
+  ([^TestCase test-case msg]
+   (.note test-case msg)))
 
 ;; Generating values
 
@@ -226,8 +234,10 @@
   may be either a string, or converted to one with `pr-str`."
   ([^Generator gen]
    (.draw *test-case* gen))
-  ([^Generator gen, label]
-   (.draw *test-case* gen
+  ([gen, label]
+   (draw! *test-case* gen label))
+  ([^TestCase test-case, ^Generator gen, label]
+   (.draw test-case gen
           (if (string? label)
             label
             (pr-str label)))))
@@ -249,8 +259,10 @@
 
 (defn final?
   "Is Hegel in the final phase of a test?"
-  []
-  (.isFinal *test-case*))
+  ([]
+   (.isFinal *test-case*))
+  ([^TestCase test-case]
+   (.isFinal test-case)))
 
 (defn fprn
   "Wrapper for (when (final?) (prn ...))"
