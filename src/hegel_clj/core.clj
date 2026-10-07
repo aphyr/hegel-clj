@@ -12,6 +12,7 @@
                       Phase
                       Reporter
                       RunReport
+                      RunStatus
                       Settings
                       TestCase
                       Verbosity)))
@@ -46,8 +47,8 @@
   [^Failure f]
   {:draws (.draws f)
    :exception (.exception f)
-   :reproduce-blob (.reproduceBlob f)
-   :caveat (.caveat f)})
+   :reproduce-blob (.orElse (.reproduceBlob f) nil)
+   :caveat (.orElse (.caveat f) nil)})
 
 (defn test-fn!
   "Runs a test. This version is more functional; see run! for the macro form.
@@ -56,6 +57,12 @@
       :database       A hegel.Database
       :derandomize?   Whether to force deterministic (or not) input selection.
       :name           The string name of the property being tested.
+
+      :reproduce-failure
+                      A string blob (e.g. the :reproduce-blob from one of
+                      the :failures returned by an earlier call to
+                      test-fn!) which has Hegel run just that failure,
+                      instead of searching and shrinking in general.
 
       :report-multiple-failures?
                       If set, Hegel will keep searching for additional distinct
@@ -79,16 +86,17 @@
 
   Returns a map describing the results of the test, of the form:
 
-      :passed?                Did all tests pass?)
-      :test-cases             How many test cases were executed?
-      :valid-test-cases       How many of them were valid
-      :invalid-test-cases     How many of them were invalid
-      :interesting-test-cases How many of them were interesting (e.g. a bug)
-      :seed                   The random seed used
+      :passed?                Did all tests pass?
+      :status                 Either :passed, :failed, or :error (if a health
+                              check failed or the engine crashed)
+      :statistics             A map of the :total, :valid, :invalid, :overrun,
+                              and :interesting test case counts.
+      :error                  A string error message, present iff the status
+                              was :error.
       :flaky?                 Hegel thought this test was non-deterministic
-      :health-check-failure?  Did a health check fail during the test?
-
-  May also throw an exception map like {:type :hegel-error, :message \"...\"}."
+      :health-check-failed?   Did a health check fail during the test?
+      :failures               A sequence of failure maps which describe each
+                              failing test case--see failure->map for details."
   [{:keys [database
            derandomize?
            health-checks
@@ -152,18 +160,23 @@
                     (case-fn test-case)))
                 settings
                 reporter)]
-    {:passed?  (.passed report)
-     :status    (.status report)
-     :statistics (let [statistics (.statistics report)]
-                   {:total (.total statistics)
-                    :valid (.valid statistics)
-                    :invalid (.invalid statistics)
-                    :overrun (.overrun statistics)
-                    :interesting (.interesting statistics)})
-     :error      (.error report)
-     :health-check-failed? (.healthCheckFailed report)
-     :failures (map failure->map (.failures report))}
-    ))
+    (cond-> {:passed?  (.passed report)
+             :status     (condp identical? (.status report)
+                           RunStatus/PASSED :passed
+                           RunStatus/FAILED :failed
+                           RunStatus/ERROR :error)
+             :statistics (let [statistics (.statistics report)]
+                           {:total (.total statistics)
+                            :valid (.valid statistics)
+                            :invalid (.invalid statistics)
+                            :overrun (.overrun statistics)
+                            :interesting (.interesting statistics)})
+             :health-check-failed? (.healthCheckFailed report)
+             :failures (map failure->map (.failures report))}
+
+      (identical? RunStatus/ERROR (.status report))
+      (assoc :error (.orElse (.error report) nil))
+    )))
 
 (defmacro test!
   "Macro form of test-fn!; takes a body, rather than a function."
