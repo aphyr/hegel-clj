@@ -3,7 +3,10 @@
                      [test :refer :all]]
             [clojure.tools.logging :refer [info warn]]
             [hegel-clj [core :refer :all]
-                       [generator :as g]]))
+                       [generator :as g]])
+  (:import (dev.hegel Invariant
+                      Rule
+                      TestCase)))
 
 (deftest test!-test
   (let [r (test! {:seed 1}
@@ -30,3 +33,28 @@
       (is (instance? AssertionError e))
       (is (= "Assert failed: (= (+ a b) (+ a (min b 3)))"
              (.getMessage e))))))
+
+(definterface IntegerStack
+  (push [^dev.hegel.TestCase tc])
+  (pop [^dev.hegel.TestCase tc])
+  (sizeIsNonNegative [^dev.hegel.TestCase tc]))
+
+(deftype AIntegerStack [^:unsynchronized-mutable stack]
+  IntegerStack
+  (^{Rule true} push [this tc]
+    (set! stack (conj stack (draw! (g/integer)))))
+  (^{Rule true} pop [this tc]
+    (assume! (seq stack))
+    (set! stack (pop stack)))
+  (^{Invariant true} sizeIsNonNegative [this tc]
+    (assert (seq stack))))
+
+(deftest stateful-integer-stack-test
+  ; I'm not sure I understand this example; it feels like it should trivially
+  ; fail because the invariant is false for the initial state.
+  (let [r (test! {:seed 1}
+                 (run-stateful! (AIntegerStack. [])))]
+    ; (pprint r)
+    (is (not (:passed? r)))
+    (is (= {} (:draws (first (:failures r)))))))
+

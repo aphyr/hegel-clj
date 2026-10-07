@@ -14,6 +14,7 @@
                       RunReport
                       RunStatus
                       Settings
+                      Stateful
                       TestCase
                       Verbosity)))
 
@@ -182,6 +183,12 @@
   "Macro form of test-fn!; takes a body, rather than a function."
   [opts & body]
   `(test-fn! ~opts (bound-fn ~'case [~'_] ~@body)))
+
+(defn run-stateful!
+  "Within a test case, asks Hegel to run a stateful test over the given
+  datatype. See hegel.dev.Stateful for details."
+  [state]
+  (Stateful/run state, *test-case*))
 
 ;; Working with test cases
 
