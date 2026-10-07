@@ -91,11 +91,16 @@
     (is (<= 120   (draw! (g/integer 120 125)) 125))))
 
 (deftest float-test
-  (with {:test-cases 50} []
-    (is (float? (draw! (g/float))))
-    (is (<= 3.4 (draw! (g/float {:min 3.4 :max 9.34})) 9.34))
-    (is (< 3.4  (draw! (g/float {:min 3.4 :max 9.34 :exclude-min? true :exclude-max? true})) 9.34))
-    (is (<= 3.4 (draw! (g/float 3.4 9.34)) 9.34))))
+  (let [lower (float 3.4)
+        upper (float 9.34)]
+    ; Note that you *can* call (g/float 9.34), but that may return 9.34, which
+    ; is *bigger* than the float 9.34! We make sure we're working with floats
+    ; first.
+    (with {:test-cases 50} []
+      (is (float? (draw! (g/float))))
+      (is (<= lower (draw! (g/float {:min lower :max upper})) upper))
+      (is (< lower  (draw! (g/float {:min lower :max upper :exclude-min? true :exclude-max? true})) upper))
+      (is (<= lower (draw! (g/float lower upper)) upper)))))
 
 (deftest double-test
   (with {:test-cases 50} []
