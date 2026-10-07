@@ -8,6 +8,7 @@
   (:refer-clojure :exclude [boolean
                             bytes
                             double
+                            filter
                             float
                             let
                             list
