@@ -26,10 +26,10 @@
     (let [failure (first (:failures r))
           e (:exception failure)]
       (is (= {:caveat nil
-              :reproduce-blob "AXicY2IAAi5GBgQFAAEFABk"
-              :draws {"draw_1" 0
-                      "draw_2" 4}})
-          (dissoc failure :exception))
+              :reproduce-blob "AXicY2IAAi5GBjjFAgABCQAd"
+              :draws {"a" 0
+                      "b" 4}}
+          (dissoc failure :exception)))
       (is (instance? AssertionError e))
       (is (= "Assert failed: (= (+ a b) (+ a (min b 3)))"
              (.getMessage e))))))
