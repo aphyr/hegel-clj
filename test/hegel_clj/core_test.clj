@@ -41,7 +41,7 @@
         r (h/test-fn! {:seed 1, :test-cases 10}
                       (fn [test-case]
                         (let [xs (h/draw! test-case (g/vector (g/integer)) "xs")
-                              pass?  (= (sort xs) (reverse xs))]
+                              pass? (= (sort xs) (reverse xs))]
                           (swap! log conj {:final? (h/final? test-case)
                                            :xs xs
                                            :pass? pass?})
