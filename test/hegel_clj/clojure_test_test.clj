@@ -4,7 +4,7 @@
             [clojure.tools.logging :refer [info warn]]
             [hegel-clj [generator :as g]
                        [clojure-test :refer [with]]
-                       [core :refer :all]])
+                       [core :as h]])
   (:import (java.io StringWriter)))
 
 ; This namespace is a little weird. We're going to use clojure.test to test
@@ -35,15 +35,18 @@
       :err (str err#)
       :reports @reports#}))
 
+; This test is here for us to run as a part of reverse-test
 (deftest reverse-test*
-  ; Generate roughly a hundred integers of vectors
+  ; Generate integers of vectors
   (with {:test-cases 10, :seed 1}
-        [xs (g/vector (g/integer))]
-        #_(prn :xs xs (if (= (sort xs) (reverse xs))
-                        :pass
-                        :fail))
+    [xs (g/vector (g/integer))]
+    ;(info (when (h/final?) :final)
+    ;      :xs xs
+    ;      (if (= (sort xs) (reverse xs))
+    ;        :pass
+    ;        :fail))
     ; Print out only the smallest vectors that make this fail
-    (when (final?) (prn :final-xs xs))
+    (when (h/final?) (prn :final-xs xs))
     ; Is sorting the same as reversing? Clearly not, so this will fail,
     ; likely with a two-element vector of different numbers.
     (is (= (sort xs)

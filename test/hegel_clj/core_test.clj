@@ -34,6 +34,28 @@
       (is (= "Assert failed: (= (+ a b) (+ a (min b 3)))"
              (.getMessage e))))))
 
+(deftest final-test
+  ; A simple test which hunts for a vector which is not in reverse sorted
+  ; order, and logs each attempted test case
+  (let [log (atom [])
+        r (h/test-fn! {:seed 1, :test-cases 10}
+                      (fn [test-case]
+                        (let [xs (h/draw! test-case (g/vector (g/integer)) "xs")
+                              pass?  (= (sort xs) (reverse xs))]
+                          (swap! log conj {:final? (h/final? test-case)
+                                           :xs xs
+                                           :pass? pass?})
+                          (assert pass?))))]
+    (pprint r)
+    (pprint @log)
+    (is (= 1 (count (:failures r))))
+    (let [finals (filter :final? @log)]'
+      (is (= 1 (count finals)))
+      (is (= [{:final true
+               :xs [0 1]
+               :pass? false}]
+             finals)))))
+
 (definterface IntegerStack
   (push [^dev.hegel.TestCase tc])
   (pop [^dev.hegel.TestCase tc])
