@@ -54,16 +54,11 @@
     ; Note that we only tell clojure.test about the shrunk case.
     ;(prn :reports reports)
     ; I'm not sure why Hegel runs several final cases here
-    (is (= ['[:fail (= (sort xs) (reverse xs))
-               (not (= (-13129 8191 93150831) (93150831 8191 -13129)))]
-             '[:fail (= (sort xs) (reverse xs))
-               (not (= (-13129 8191 93150831) (93150831 8191 -13129)))]
-             '[:fail (= (sort xs) (reverse xs))
-               (not (= (-13129 8191 93150831) (93150831 8191 -13129)))]
-             '[:fail (= (sort xs) (reverse xs))
-               (not (= (-13129 8191 93150831) (93150831 8191 -13129)))]
-             '[:fail (= (sort xs) (reverse xs))
-               (not (= (0 1) (1 0)))]]
+    (is (= '[[:fail (-13129 8191 93150831) ((93150831 8191 -13129))]
+             [:fail (-13129 8191 93150831) ((93150831 8191 -13129))]
+             [:fail (-13129 8191 93150831) ((93150831 8191 -13129))]
+             [:fail (-13129 8191 93150831) ((93150831 8191 -13129))]
+             [:fail (0 1) ((1 0))]]
            (mapv (juxt :type :expected :actual) reports)))
     (is (= ":final-xs [-13129 8191 93150831]
 :final-xs [-13129 8191 93150831]
