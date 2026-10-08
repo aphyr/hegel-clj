@@ -93,9 +93,6 @@
 (deftest float-test
   (let [lower (float 3.4)
         upper (float 9.34)]
-    ; Note that you *can* call (g/float 9.34), but that may return 9.34, which
-    ; is *bigger* than the float 9.34! We make sure we're working with floats
-    ; first.
     (with {:test-cases 50} []
       (is (float? (h/draw! (g/float))))
       (is (<= lower (h/draw! (g/float {:min lower :max upper})) upper))

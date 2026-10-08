@@ -168,7 +168,7 @@
      min                        (.min min)
      max                        (.max max)
      (not (nil? exclude-min?))  (.excludeMin exclude-min?)
-     (not (nil? exclude-max?))  (.excludeMin exclude-max?)))
+     (not (nil? exclude-max?))  (.excludeMax exclude-max?)))
   ([min max]
    (float {:min min, :max max})))
 
@@ -190,7 +190,7 @@
      min                        (.min min)
      max                        (.max max)
      (not (nil? exclude-min?))  (.excludeMin exclude-min?)
-     (not (nil? exclude-max?))  (.excludeMin exclude-max?)))
+     (not (nil? exclude-max?))  (.excludeMax exclude-max?)))
   ([min max]
    (double {:min min, :max max})))
 
