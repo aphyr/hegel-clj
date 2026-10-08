@@ -1,26 +1,17 @@
 # Hegel-clj
 
-Clojure bindings for the [Hegel property-based testing
-system](https://hegel.dev/). Hegel-clj supports the full set of Hegel schemas,
-along with generator composition via `let`, `fmap`, and `bind`. It has
-shrinking, final test case reporting, and clojure.test integration.
-
-This is usable, but early work--I haven't implemented many of Hegel's features,
-and there are a bunch of obvious user affordances missing (we have no
-filtering, or recursive tree generator, for instance). I'm hoping to prove out
-whether this is actually *good* before going too far. Users and contributors
-welcome.
-
-Hegel-core is very new, the documentation is vague, and the daemon frequently
-crashes or gets stuck. It is not hard to write an incorrect or expensive
-generator that breaks the daemon; I intend to but have not yet written logic to
-automatically kill and restart it.
+This library provides Clojure bindings for the [Hegel property-based testing
+system](https://hegel.dev/). Like test.check, Quickcheck, and Hypothesis, Hegel
+lets you write generators of random values, and searches for values which would
+make some property fail. Hegel-clj wraps
+[hegel-java](https://github.com/hegel-dev/hegel-java), and supports the full
+range of Hegel generators, including imperative and functional composition and
+recursion. It often shrinks better than `test.check`, can print only during the
+smallest failing cases, and integrates nicely with `clojure.test`.
 
 ## Installation
 
-Hegel-clj uses Hegel-core, which is a Python program. You'll need the
-[uv](https://docs.astral.sh/uv/) package manager, which we use to install and
-run Hegel-core. Then add hegel-clj to your project's dev dependencies:
+Via Clojars, as usual:
 
 [![Clojars Project](https://img.shields.io/clojars/v/com.aphyr/hegel-clj.svg?include_prereleases)](https://clojars.org/com.aphyr/hegel-clj)
 
@@ -32,7 +23,7 @@ the index of a value in a vector:
 ```clj
 (ns my-test
   (:require [clojure.test :refer :all]
-            [hegel-clj [core :refer :all]
+            [hegel-clj [core :as h]
                        [clojure-test :refer [with]]
                        [generator :as g]]))
 
@@ -85,13 +76,13 @@ bug---a process called *shrinking*.
 :x 128 :xs [128]
 
 FAIL in (fast-index-of-test) (form-init18001555065152736569.clj:6)
-expected: 0
-  actual: (-1)
+expected: (= (.indexOf xs x) (fast-index-of xs x))
+  actual: (not (= 0 -1))
 ```
 
 Hegel-clj found a case where the index of an element should have been `0`, but
 our `fast-index-of` function returned `-1`. You can see each version of `x` and
-`y` Hegel tried, and how once it discovered a bug, it tried a variety of
+`xs` Hegel tried, and how once it discovered a bug, it tried a variety of
 smaller numbers and vectors to try and reproduce the problem.
 
 Rather than see *every* value, we can log just those from Hegel's *final
@@ -102,7 +93,7 @@ phase*, where it replays the smallest failing example it found:
   (with {:test-cases 100}
         [x  (g/integer)
          xs (g/vector (g/integer))]
-    (fprn :x x, :xs xs)
+    (h/fprn :x x, :xs xs)
     (is (= (.indexOf xs x) (fast-index-of xs x)))))
 ```
 
@@ -112,19 +103,20 @@ phase. Now we only have to read the output from the smallest failing test case:
 ```clj
 :x 128 :xs [128]
 
-FAIL in (fast-index-of-test) (form-init18001555065152736569.clj:6)
-expected: 0
-  actual: (-1)
+FAIL in (fast-index-of-test) (form-init5299215160681576945.clj:6)
+expected: (= (.indexOf xs x) (fast-index-of xs x))
+  actual: (not (= 0 -1))
 ```
 
-Bingo. Our function fails when given a vector `[128]`. Let's ask some more questions about those bad inputs...
+Bingo. Our function fails when given a vector `[128]`. Let's ask some more
+questions about those bad inputs...
 
 ```clj
 (deftest fast-index-of-test
   (with {:test-cases 100}
         [x  (g/integer)
          xs (g/vector (g/integer))]
-    (when-final
+    (when (h/final?)
       (let [x0 (xs 0)]
         (prn :x (class x) x, :x0 (class x0) x0)
         (prn 'identical? (identical? x x0))
@@ -143,7 +135,7 @@ identical? false
 
 Aha! So these are both java.lang.Longs, and while they're *equal* (represent
 the same value) they're not *identical* (at the same memory address). Longs up
-to 127 *are* identical on OpenJDK, so we wouldn't have caught this bug if we
+to 127 are identical on OpenJDK, so we wouldn't have caught this bug if we
 stuck to small numbers.
 
 ## Overview
@@ -151,34 +143,34 @@ stuck to small numbers.
 - [`hegel-clj.core`](/src/hegel_clj/core.clj) provides a friendly API to Hegel-clj, including dynamic state.
 - [`hegel.generator`](/src/hegel_clj/generator.clj) constructs generators of random values.
 - [`hegel.clojure-test`](/src/hegel_clj/clojure_test.clj) provides `clojure.test` integration.
-- [`hegel.client`](/src/hegel_clj/client.clj) is the internal client which spawns and talks to a Hegel-core daemon.
+
 
 Your main entrypoint is generally either through a test integration namespace
 (like `hegel-clj.clojure-test/with`), or by starting a test using
-`hegel-clj.core/run-test!`. From there, you can generate random values using
-`hegel-clj.generator/let` or the lower-level `hegel-clj.core/gen`.
+`hegel-clj.core/test!`. From there, you can generate random values using
+`hegel-clj.core`'s `let` or `draw!`. `run-test!` will hunt for values that
+cause the body to throw, and `with` will also flag any `clojure.test/is`
+failures.
 
 ## Philosophy
 
 Hegel takes an imperative approach to testing; generated values are
 deterministic (and Hegel will warn you when your tests aren't!), but the
-generators have implicit side effects---notably, each call to generate a value
-mutates the Hegel PRNG. This is actually sort of nice: it frees you to generate
-values anywhere, just like you would with `(rand)`, and work with them
-incrementally.
+generators have implicit side effects---notably, each call to `draw!` mutates
+the Hegel PRNG. This is actually sort of nice: it frees you to generate values
+anywhere, just like you would with `(rand)`, and work with them incrementally.
 
 We lean into that imperative style by making it easy to do `prn`-style
-debugging, but only during the final test phase. There's a more-functional core
-in there too, if you want.
+debugging, but only during the final test phase.
 
 ## Generators
 
 All generators live in [`hegel-clj.generator`](src/hegel_clj/generator.clj).
 The basic generators are:
 
-- Scalars: `constant`, `boolean`, `integer`, `float`, `bytes`, `string`,
-  `regex`, `symbol`, `keyword` (available in both simple and qualified
-  variants)
+- Scalars: `just`, `sampled-from`, `for-type`, `boolean`, `integer`, `long`, `float`,
+  `double`, `bytes`, `string`, `regex-str`, `symbol`, `keyword` (available in
+  both simple and qualified variants)
 - Special strings: `email`, `domain`, `url-str`, `ip-address-str`
 - Dates and times: `local-date`, `local-time`, `local-date-time`, and their
   `-str` variants for ISO8601 strings.
@@ -188,18 +180,18 @@ The basic generators are:
 There are also higher-order generators which transform or combine other
 generators.
 
-- Transform values: `fmap`, `bind`, `shuffle`, `rand-nth`
-- Generate collections dynamically: `collect`
+- Transform generators: `fmap`, `bind`, `filter`
+- Combine generators: `one-of`, `composite`, `deferred`
 
-Typically you'll find it most convenient to use `g/let`, which works just like
-Clojure `let`, but when provided with a generator schema on the right hand
+Typically you'll find it most convenient to use `hegel.core/let`, which works
+just like Clojure `let`, but when provided with a generator on the right hand
 side, generates a random value:
 
 ```clj
 (require '[hegel-clj [core :as h]
                      [generator :as g]])
-(run-test! {}
-  (g/let [; First, generate a random size for a collection between 2 and 64
+(h/test! {}
+  (h/let [; First, generate a random size for a collection between 2 and 64
           n       (g/integer {:min 2 :max 64})
           ; Compute a maximum value, half the size
           max-val (long (/ n 2))
@@ -211,11 +203,7 @@ side, generates a random value:
                          (g/integer {:min 0, :max max-val}))]
     (prn m)
     ; Assert that the values in the map are distinct
-    {:n n
-     :m m
-     :status (if (= (vals m) (distinct (vals m)))
-               :valid
-               :interesting)}))
+    (assert (= (vals m) (distinct (vals m))))))
 ```
 
 By the pigeonhole principle, a map of `n` elements to `n/2` elements must not
