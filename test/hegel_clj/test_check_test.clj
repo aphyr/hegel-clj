@@ -33,7 +33,7 @@
                                           (hg/integer)))))
         h-res (h/test! {:test-cases 1000
                         :seed       1}
-                       (hg/let [xs h-ints]
+                       (h/let [xs h-ints]
                          (assert (not-any? #{42} xs))))
         ;_ (pprint h-res)
         ; Ah, much better

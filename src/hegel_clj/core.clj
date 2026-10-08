@@ -1,6 +1,8 @@
 (ns hegel-clj.core
   "The main API for hegel-clj."
-  (:require [clojure [pprint :refer [pprint]]
+  (:refer-clojure :exclude [let])
+  (:require [clojure [core :as c]
+                     [pprint :refer [pprint]]
                      [string :as str]
                      [test :as ct]]
             [clojure.tools.logging :refer [info warn]])
@@ -27,7 +29,7 @@
 
 (def next-global-span-type
   "The Core can generate span types, but we can also generate them globally
-  (e.g. at macroexpand time). We use this in g/let to start spans. Global spans
+  (e.g. at macroexpand time). We use this in `let` to start spans. Global spans
   are negative."
   (atom -1))
 
@@ -110,7 +112,7 @@
            verbosity
            ]}
    case-fn]
-  (let [phases (when-not (nil? phases)
+  (c/let [phases (when-not (nil? phases)
                  (mapv (fn [phase]
                        (case phase
                          :explicit Phase/EXPLICIT
@@ -166,7 +168,7 @@
                            RunStatus/PASSED :passed
                            RunStatus/FAILED :failed
                            RunStatus/ERROR :error)
-             :statistics (let [statistics (.statistics report)]
+             :statistics (c/let [statistics (.statistics report)]
                            {:total (.total statistics)
                             :valid (.valid statistics)
                             :invalid (.invalid statistics)
@@ -188,8 +190,10 @@
 (defn run-stateful!
   "Within a test case, asks Hegel to run a stateful test over the given
   object. See hegel.dev.Stateful for details."
-  [state]
-  (Stateful/run state *test-case*))
+  ([state]
+   (Stateful/run state *test-case*))
+  ([test-case state]
+   (Stateful/run state test-case)))
 
 ;; Working with test cases
 
@@ -234,7 +238,7 @@
   may be either a string, or converted to one with `pr-str`."
   ([^Generator gen]
    (.draw *test-case* gen))
-  ([gen, label]
+  ([gen label]
    (draw! *test-case* gen label))
   ([^TestCase test-case, ^Generator gen, label]
    (.draw test-case gen
@@ -242,12 +246,37 @@
             label
             (pr-str label)))))
 
+
+(defmacro let
+  "Like Clojure's let, but when a right-hand side is a Generator, draws a value
+  using hegel-clj.core/draw!. This lets you mix generators and regular values.
+  For example:
+
+      (h/let [a (gen/integer) ; Drawn randomly by hegel-clj
+              b (+ a 2)]      ; Evaluated as normal
+        ...)"
+  [binding-forms & body]
+  (assert (even? (count binding-forms)))
+  (c/let [tmp-lhs (gensym 'lhs)]
+    `(c/let [~@(mapcat (fn [[lhs rhs]]
+                         ; We expand (let [a x] into
+                         ; (let [lhs123 x
+                         ;       a (if (instance? Generator lhs123)
+                         ;            (draw! lhs123)
+                         ;            lhs123)]
+                         `[~tmp-lhs ~rhs
+                           ~lhs (if (instance? Generator ~tmp-lhs)
+                                  (draw! ~tmp-lhs ~(pr-str lhs))
+                                  ~tmp-lhs)])
+                       (partition 2 binding-forms))]
+      ~@body)))
+
 (defn sample
   "Samples up to `n` values from the provided generator. Helpful for debugging
   generators. Can either take a number of values, or a map passed to `test!`,
   which is helpful if you want to pass a deterministic seed etc."
   [n-or-opts gen]
-  (let [out (atom [])
+  (c/let [out (atom [])
         test-opts (if (integer? n-or-opts)
                     {:test-cases n-or-opts}
                     n-or-opts)]

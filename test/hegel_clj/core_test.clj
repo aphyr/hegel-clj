@@ -2,17 +2,17 @@
   (:require [clojure [pprint :refer [pprint]]
                      [test :refer :all]]
             [clojure.tools.logging :refer [info warn]]
-            [hegel-clj [core :refer :all]
+            [hegel-clj [core :as h]
                        [generator :as g]])
   (:import (dev.hegel Invariant
                       Rule
                       TestCase)))
 
 (deftest test!-test
-  (let [r (test! {:seed 1}
-                (g/let [a (draw! (g/integer))
-                        b (draw! (g/integer))]
-                  (assert (= (+ a b) (+ a (min b 3))))))]
+  (let [r (h/test! {:seed 1}
+                   (h/let [a (g/integer)
+                           b (g/integer)]
+                     (assert (= (+ a b) (+ a (min b 3))))))]
     (is (= {:passed? false,
             :status :failed
             :statistics {:total 55
@@ -42,9 +42,9 @@
 (deftype AIntegerStack [^:unsynchronized-mutable stack]
   IntegerStack
   (^{Rule true} push [this tc]
-    (set! stack (conj stack (draw! (g/integer)))))
+    (set! stack (conj stack (h/draw! tc (g/integer) "element"))))
   (^{Rule true} pop [this tc]
-    (assume! (seq stack))
+    (h/assume! (seq stack))
     (set! stack (pop stack)))
   (^{Invariant true} sizeIsNonNegative [this tc]
     (assert (seq stack))))
@@ -52,8 +52,8 @@
 (deftest stateful-integer-stack-test
   ; I'm not sure I understand this example; it feels like it should trivially
   ; fail because the invariant is false for the initial state.
-  (let [r (test! {:seed 1}
-                 (run-stateful! (AIntegerStack. [])))]
+  (let [r (h/test! {:seed 1}
+                   (h/run-stateful! (AIntegerStack. [])))]
     ; (pprint r)
     (is (not (:passed? r)))
     (is (= {} (:draws (first (:failures r)))))))

@@ -2,7 +2,7 @@
   (:require [clojure [pprint :refer [pprint]]
                      [test :refer [deftest is]]]
             [clojure.tools.logging :refer [info warn]]
-            [hegel-clj [core :refer :all]
+            [hegel-clj [core :as h]
                        [clojure-test :refer [with]]
                        [generator :as g]])
   (:import (java.nio ByteBuffer)
@@ -23,9 +23,9 @@
 
 (deftest bind-test
   (let [s (g/bind (fn [size]
-                    (g/tuple (g/vector {:size size} (g/integer))
-                             (g/vector {:size size} (g/float))))
-                  (g/integer {:min 1, :max 5}))]
+                      (g/tuple (g/vector {:size size} (g/integer))
+                               (g/vector {:size size} (g/float))))
+                    (g/integer {:min 1, :max 5}))]
     (with {:test-cases 10}
           [[ints floats] s]
           (is (pos? (count ints)))
@@ -37,7 +37,7 @@
 (deftest composite-test
   (with {:test-cases 50}
     [x (g/composite
-         [:hi (draw! (g/float))])]
+         [:hi (h/draw! (g/float))])]
     (is (vector? x))
     (is (= 2 (count x)))
     (is (= :hi (first x)))
@@ -50,14 +50,14 @@
 
 (deftest deferred-test
   (let [leaf   (g/integer 0 9)
-        tree   (g/deferred)]
+          tree   (g/deferred)]
     (g/set-deferred! tree (g/one-of [leaf (g/vector tree)]))
     (is (= [0
             1
             [9]
             0
             [1 [] [] 1 [[2 [[]] 2 2 3 [9] 3 8 6] [9]] [] 7 7 4]]
-           (sample {:test-cases 5, :seed 13} tree)))))
+           (h/sample {:test-cases 5, :seed 13} tree)))))
 
 (deftest just-test
   (with {:test-cases 2}
@@ -70,7 +70,7 @@
     [x (g/one-of [(g/boolean) (g/float)])]
     (is (or (boolean? x) (float? x)))
 
-    (g/let [x (g/one-of [(g/list (g/integer)) (g/set (g/integer))])]
+    (h/let [x (g/one-of [(g/list (g/integer)) (g/set (g/integer))])]
       (is (or (list? x) (set? x)))
       (is (every? integer? x)))))
 
@@ -85,10 +85,10 @@
 
 (deftest integer-test
   (with {:test-cases 5} []
-    (is (integer? (draw! (g/integer))))
-    (is (<= 4     (draw! (g/integer {:min 4}))))
-    (is (<= -6    (draw! (g/integer {:min -6 :max -3})) -3))
-    (is (<= 120   (draw! (g/integer 120 125)) 125))))
+    (is (integer? (h/draw! (g/integer))))
+    (is (<= 4     (h/draw! (g/integer {:min 4}))))
+    (is (<= -6    (h/draw! (g/integer {:min -6 :max -3})) -3))
+    (is (<= 120   (h/draw! (g/integer 120 125)) 125))))
 
 (deftest float-test
   (let [lower (float 3.4)
@@ -97,23 +97,23 @@
     ; is *bigger* than the float 9.34! We make sure we're working with floats
     ; first.
     (with {:test-cases 50} []
-      (is (float? (draw! (g/float))))
-      (is (<= lower (draw! (g/float {:min lower :max upper})) upper))
-      (is (< lower  (draw! (g/float {:min lower :max upper :exclude-min? true :exclude-max? true})) upper))
-      (is (<= lower (draw! (g/float lower upper)) upper)))))
+      (is (float? (h/draw! (g/float))))
+      (is (<= lower (h/draw! (g/float {:min lower :max upper})) upper))
+      (is (< lower  (h/draw! (g/float {:min lower :max upper :exclude-min? true :exclude-max? true})) upper))
+      (is (<= lower (h/draw! (g/float lower upper)) upper)))))
 
 (deftest double-test
   (with {:test-cases 50} []
-    (is (double? (draw! (g/double))))
-    (is (<= 3.4 (draw! (g/double {:min 3.4 :max 9.34})) 9.34))
-    (is (< 3.4  (draw! (g/double {:min 3.4 :max 9.34 :exclude-min? true :exclude-max? true})) 9.34))
-    (is (<= 3.4 (draw! (g/double 3.4 9.34)) 9.34))))
+    (is (double? (h/draw! (g/double))))
+    (is (<= 3.4 (h/draw! (g/double {:min 3.4 :max 9.34})) 9.34))
+    (is (< 3.4  (h/draw! (g/double {:min 3.4 :max 9.34 :exclude-min? true :exclude-max? true})) 9.34))
+    (is (<= 3.4 (h/draw! (g/double 3.4 9.34)) 9.34))))
 
 
 (deftest string-test
   (with {:test-cases 50} []
-    (is (string? (draw! (g/string))))
-    (g/let [^String s (g/string {:min-size 4 :max-size 6})]
+    (is (string? (h/draw! (g/string))))
+    (h/let [^String s (g/string {:min-size 4 :max-size 6})]
       (is (string? s))
       (is (<= 4 (.codePointCount s 0 (.length s)) 6)))))
 
@@ -131,13 +131,13 @@
                      #"rege(x(es)?|xps?)\Z"
                      #"^[^x]{2,5}x+$"
                      #"^\"/\\$"]]
-      (g/let [s (g/regex-str pattern)]
+      (h/let [s (g/regex-str pattern)]
         (is (re-find pattern s))))
-    (g/let [s (g/regex-str #"[0-9]+" {:full-match? true})]
+    (h/let [s (g/regex-str #"[0-9]+" {:full-match? true})]
       (is (re-find #"^\d+$" s)))
     ; Digits are frustrating; Python \d generates all Unicode digits by
     ; default, which is *not* what you'd expect from Java.
-    (g/let [s (g/regex-str "(?a)^\\d+$")]
+    (h/let [s (g/regex-str "(?a)^\\d+$")]
       (is (re-find #"^\d+$" s)))))
 
 (deftest vector-test

@@ -41,8 +41,8 @@
   values and test whether they produce correct results. Takes an options map
   for `hegel-clj.test/test!*`, a binding vector, then a body. Evaluates
   body roughly `test-cases` times, with bindings provided by
-  `hegel-clj.gen/let`. You can generate more values using `draw!` or
-  `hegel-clj.gen/let`, if needed. Make test assertions using `clojure.test/is`, as
+  `hegel-clj.core/let`. You can generate more values using `hegel-clj.core/draw!` or
+  `hegel-clj.core/let`, if needed. Make test assertions using `clojure.test/is`, as
   usual. Failing tests will be automatically shrunk and re-run with minimal
   examples. Log these examples using `note`.
 
@@ -70,7 +70,7 @@
                        ; Generate values and evaluate body, recording
                        ; clojure.test reports
                        (let [reports# (capture-reports
-                                        (g/let ~bindings
+                                        (h/let ~bindings
                                           ~@body))]
                          ; If every clojure.test assertion passed, this test
                          ; case does too.

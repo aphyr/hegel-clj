@@ -515,28 +515,3 @@
   Optional, and Map, though I don't know how to actually *use* that feature yet."
   [class]
   (Generators/forType class))
-
-(defmacro let
-  "Like Clojure's let, but when a right-hand side is a Generator, draws a value
-  using hegel-clj.core/draw!. This lets you mix generators and regular values.
-  For example:
-
-      (gen/let [a (gen/integer) ; Drawn randomly by hegel-clj
-                b (+ a 2)]      ; Evaluated as normal
-        ...)"
-  [binding-forms & body]
-  (assert (even? (count binding-forms)))
-  (c/let [tmp-lhs (gensym 'lhs)]
-    `(c/let [~@(mapcat (fn [[lhs rhs]]
-                         ; We expand (let [a x] into
-                         ; (let [lhs123 x
-                         ;       a (if (instance? Generator lhs123)
-                         ;            (hegel-clj.core/draw! lhs123)
-                         ;            lhs123)]
-                         `[~tmp-lhs ~rhs
-                           ~lhs (if (instance? Generator ~tmp-lhs)
-                                  (hegel-clj.core/draw! ~tmp-lhs
-                                                        ~(pr-str lhs))
-                                  ~tmp-lhs)])
-                       (partition 2 binding-forms))]
-       ~@body)))
