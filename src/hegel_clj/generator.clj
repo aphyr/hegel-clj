@@ -256,6 +256,7 @@
    (c/let [min-size (or min-size size)
            max-size (or max-size size)]
      (fmap vec (cond-> (Generators/lists elements)
+                 unique?  (.unique elements)
                  min-size (.minSize min-size)
                  max-size (.maxSize max-size))))))
 
