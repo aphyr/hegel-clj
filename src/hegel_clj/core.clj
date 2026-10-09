@@ -11,6 +11,7 @@
                       Generator
                       HealthCheck
                       Hegel
+                      Label
                       Phase
                       Reporter
                       RunReport
@@ -26,17 +27,6 @@
   "It's convenient to have an implicitly bound test case, so one can simply
   call (draw! generator) instead of threading the test case through."
   nil)
-
-(def next-global-span-type
-  "The Core can generate span types, but we can also generate them globally
-  (e.g. at macroexpand time). We use this in `let` to start spans. Global spans
-  are negative."
-  (atom -1))
-
-(defn gen-global-span-type!
-  "Generates a new global span. This is available at macroexpand time."
-  []
-  (swap! next-global-span-type dec))
 
 ;; Running tests
 
@@ -234,18 +224,73 @@
 
 (defn draw!
   "Given a generator, draws a randomly selected value. Optionally takes a
-  label, which will be used to describe the value in the final output. Label
-  may be either a string, or converted to one with `pr-str`."
+  label, which will be used to describe the value in the final output. For
+  example:
+
+      (draw! (g/float))
+      (draw! \"bools\" (g/vector (g/boolean)))
+      (draw! test-case \"names\" (g/set (g/string)))"
   ([^Generator gen]
    (.draw *test-case* gen))
-  ([gen label]
-   (draw! *test-case* gen label))
-  ([^TestCase test-case, ^Generator gen, label]
+  ([label gen]
+   (draw! *test-case* label gen))
+  ([^TestCase test-case, label, ^Generator gen]
    (.draw test-case gen
           (if (string? label)
             label
             (pr-str label)))))
 
+(defn ^long label
+  "Takes a keyword and returns a long label for a span. These tell Hegel the
+  kind of structure represented by the span. There are several built-in labels
+  from Hegel.label. Using any other label will generate a fresh one."
+  [label]
+  (case label
+    :list          Label/LIST
+    :list-element  Label/LIST_ELEMENT
+    :set           Label/SET
+    :set-element   Label/SET_ELEMENT
+    :map           Label/MAP
+    :map-entry     Label/MAP_ENTRY
+    :tuple         Label/TUPLE
+    :one-of        Label/ONE_OF
+    :optional      Label/OPTIONAL
+    :fixed-dict    Label/FIXED_DICT
+    :flat-map      Label/FLAT_MAP
+    :filter        Label/FILTER
+    :mapped        Label/MAPPED
+    :sampled-from  Label/SAMPLED_FROM
+    :enum-variant  Label/ENUM_VARIANT
+    :stateful-rule Label/STATEFUL_RULE
+    :composite     Label/COMPOSITE
+    (Label/of (name label))))
+
+(defmacro span!
+  "Opens a span, evaluates body, then closes it. Spans denote a series of draws
+  which belong together, so that Hegel can shrink them as a unit. Takes a
+  literal keyword label, which can either be a built-in Hegel label or a custom
+  one; see `label` for details.
+
+  Can take an optional test case as the first argument, or just a span, in
+  which case *test-case* is used.
+
+      (span :list-element
+        (draw! (g/integer)))
+
+      (span my-test-case :list-element
+        (draw! my-test-case (g/integer)))"
+  [& args]
+  (c/let [[test-case label-name body]
+          (if (keyword? (first args))
+            [`*test-case* (first args) (rest args)]
+            [(first args) (second args) (drop 2 args)])
+          ; We need a type hint
+          test-case (vary-meta test-case assoc :tag `TestCase)
+          label (label label-name)]
+    `(try (.startSpan ~test-case label)
+          ~@body
+          (finally
+            (.stopSpan ~test-case)))))
 
 (defmacro let
   "Like Clojure's let, but when a right-hand side is a Generator, draws a value
@@ -266,7 +311,7 @@
                          ;            lhs123)]
                          `[~tmp-lhs ~rhs
                            ~lhs (if (instance? Generator ~tmp-lhs)
-                                  (draw! ~tmp-lhs ~(pr-str lhs))
+                                  (draw! ~(pr-str lhs) ~tmp-lhs)
                                   ~tmp-lhs)])
                        (partition 2 binding-forms))]
       ~@body)))

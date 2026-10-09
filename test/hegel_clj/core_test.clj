@@ -34,20 +34,21 @@
       (is (= "Assert failed: (= (+ a b) (+ a (min b 3)))"
              (.getMessage e))))))
 
-(deftest final-test
+(deftest final?-test
   ; A simple test which hunts for a vector which is not in reverse sorted
   ; order, and logs each attempted test case
   (let [log (atom [])
         r (h/test-fn! {:seed 1, :test-cases 10}
                       (fn [test-case]
-                        (let [xs (h/draw! test-case (g/vector (g/integer)) "xs")
+                        (let [xs (h/draw! test-case "xs" (g/vector (g/integer)))
                               pass? (= (sort xs) (reverse xs))]
                           (swap! log conj {:final? (h/final? test-case)
                                            :xs xs
                                            :pass? pass?})
                           (assert pass?))))]
-    (pprint r)
-    (pprint @log)
+    ;(pprint r)
+    ;(pprint @log)
+    ;(pprint (frequencies (map :xs @log)))
     (is (= 1 (count (:failures r))))
     (let [finals (filter :final? @log)]'
       (is (= 1 (count finals)))
@@ -55,6 +56,15 @@
                :xs [0 1]
                :pass? false}]
              finals)))))
+
+#_(deftest span-test
+  ; I don't actually know how to test this yet. We need to find some place
+  ; where Hegel, I dunno, shrinks more efficiently given a span or something.
+  (let [r (h/test! {:seed 1}
+                   (h/span! :composite
+                            (h/let [x (g/integer)
+                                    y (g/integer)])))]
+    (is (:passed? r))))
 
 (definterface IntegerStack
   (push [^dev.hegel.TestCase tc])
