@@ -28,6 +28,7 @@
   (:import (clojure.lang PersistentList)
            (dev.hegel Generator
                       Generators
+                      Label
                       Tuple2
                       Tuple3
                       Tuple4
@@ -79,7 +80,13 @@
   case. Takes a function `(f test-case) -> x`, and returns a Generator that
   returns xs."
   [f]
-  (Generators/composite f))
+  (Generators/composite
+    ; This wrapper works around what I think is a bug in Hegel-java--it
+    ; silently passes any cases where a generator throws an exception.
+    (fn with-errors [test-case]
+      (try (f test-case)
+           (catch Throwable t
+             (warn t "Composite generator threw!"))))))
 
 (defmacro composite
   "Wrapper for composite-fn. Takes a body which returns a value, presumably
@@ -243,8 +250,29 @@
    (cond-> (Generators/fromRegex (str pattern))
      (not (nil? full-match?)) (.fullmatch (c/boolean full-match?)))))
 
+(deftype UniqueVectorGenerator [^long min-size, ^long max-size, ^Generator element-gen]
+  ; There used to be a path in hegel-java for unique lists, but they got rid
+  ; of it. We'll drop down to the raw collection API.
+  Generator
+  (doDraw [this test-case]
+    (.startSpan test-case Label/LIST)
+    (try
+      (c/let [id (.newCollection test-case min-size max-size)]
+        (loop [seen (transient #{})
+               xs   (transient [])]
+          (if (.collectionMore test-case id)
+            (c/let [x (.doDraw element-gen test-case)]
+              (if (contains? seen x)
+                (do (.collectionReject test-case id "duplicate element")
+                    (recur seen xs))
+                (recur (conj! seen x)
+                       (conj! xs x))))
+            (persistent! xs))))
+      (finally
+        (.stopSpan test-case false)))))
+
 (defn vector
-  "Generates a vector of elements. Takes options and Generator of elements.
+  "Generates a vector of elements. Takes options and a Generator of elements.
 
     :size       Shorthand for {:min-size size, :max-size size}
     :min-size   The minimum number of elements, inclusive
@@ -255,10 +283,11 @@
   ([{:keys [size min-size max-size unique?]} elements]
    (c/let [min-size (or min-size size)
            max-size (or max-size size)]
-     (fmap vec (cond-> (Generators/lists elements)
-                 unique?  (.unique elements)
-                 min-size (.minSize min-size)
-                 max-size (.maxSize max-size))))))
+     (if unique?
+       (UniqueVectorGenerator. min-size max-size elements)
+       (fmap vec (cond-> (Generators/lists elements)
+                   min-size (.minSize min-size)
+                   max-size (.maxSize max-size)))))))
 
 (defn list
   "Like vector, but returns Clojure lists."
