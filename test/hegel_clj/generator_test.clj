@@ -50,7 +50,7 @@
 
 (deftest deferred-test
   (let [leaf   (g/integer 0 9)
-          tree   (g/deferred)]
+        tree   (g/deferred)]
     (g/set-deferred! tree (g/one-of [leaf (g/vector tree)]))
     (is (= [0
             1

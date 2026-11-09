@@ -1,31 +1,26 @@
 # Hegel-clj
 
+[![Clojars Project](https://img.shields.io/clojars/v/com.aphyr/hegel-clj.svg?include_prereleases)](https://clojars.org/com.aphyr/hegel-clj)
+[![cljdoc badge](https://cljdoc.org/badge/com.aphyr/hegel-clj)](https://cljdoc.org/d/com.aphyr/hegel-cljp)
+
 This library provides Clojure bindings for the [Hegel property-based testing
-system](https://hegel.dev/). Like test.check, Quickcheck, and Hypothesis, Hegel
-lets you write generators of random values, and searches for values which would
-make some property fail. Hegel-clj wraps
+library](https://hegel.dev/). Like
+[test.check](https://github.com/clojure/test.check),
+[Quickcheck](https://www.erlang-factory.com/upload/presentations/19/quickchecktutorial_tartsjhughes.pdf),
+and [Hypothesis](https://hypothesis.works), Hegel lets you write generators of
+random values, a property over those values, searches for values which would
+make that property fail. Hegel-clj wraps
 [hegel-java](https://github.com/hegel-dev/hegel-java), and supports the full
 range of Hegel generators, including imperative and functional composition and
-recursion. It often shrinks better than `test.check`, can print only during the
-smallest failing cases, and integrates nicely with `clojure.test`.
-
-## Installation
-
-Via Clojars, as usual:
-
-[![Clojars Project](https://img.shields.io/clojars/v/com.aphyr/hegel-clj.svg?include_prereleases)](https://clojars.org/com.aphyr/hegel-clj)
+recursion. It often shrinks better than `test.check`, integrates nicely with
+`clojure.test`, and can log only during the minimal test cases.
 
 ## Quickstart
 
-Here's how to write a simple generative test for a buggy function that finds
-the index of a value in a vector:
+Imagine you had a function that found the index of a value in a vector:
 
 ```clj
-(ns my-test
-  (:require [clojure.test :refer :all]
-            [hegel-clj [core :as h]
-                       [clojure-test :refer [with]]
-                       [generator :as g]]))
+(ns my-test)
 
 (defn fast-index-of
   "Finds the index of element `x` in collection `xs`, or -1."
@@ -37,6 +32,19 @@ the index of a value in a vector:
         i
         (recur (inc i))))))
 
+(fast-index-of [1 2 3] 2)
+; => 1
+```
+
+Now let's write a generative test for this function, using hegel-clj:
+
+```clj
+(ns my-test
+  (:require [clojure.test :refer :all]
+            [hegel-clj [core :as h]
+                       [clojure-test :refer [with]]
+                       [generator :as g]]))
+
 (deftest fast-index-of-test
   (with {:test-cases 100}
         [x  (g/integer)
@@ -45,37 +53,49 @@ the index of a value in a vector:
     (is (= (.indexOf xs x) (fast-index-of xs x)))))
 ```
 
-Hegel runs the body of the `with` expression roughly a hundred times with
-randomly generated integers for `x` and `xs`. If the `(is ...)` assertion
-fails, it searches for a simpler choice of `x` and `xs` that still cause a
-bug---a process called *shrinking*.
+When we run this test, Hegel runs the body of the `with` expression roughly a
+hundred times with randomly generated integers for `x` and `xs`. If the `(is
+...)` assertion fails, it searches for a simpler choice of `x` and `xs` that
+still cause a bug---a process called *shrinking*.
 
 ```clj
+(fast-index-of-test)
+
 :x 0 :xs []
-:x 97 :xs []
-:x 7557229229202480762 :xs []
-:x -2767819082036582656 :xs []
-:x -100 :xs []
-:x -100 :xs [-28430]
-:x -1216555004209145122 :xs []
-:x -22490 :xs []
-:x 13808 :xs []
-:x -19669 :xs []
-:x 7008 :xs []
-:x 27735 :xs [-18 -6395 -31652 65 -121645100408831999]
-:x 27735 :xs [-18 -6395 27735 65 -121645100408831999]
-:x 27735 :xs [-18 -6395 65 65 -121645100408831999]
+:x -8191 :xs [-1826]
+:x 389806 :xs [-447516231 -15128098]
+:x -6584392 :xs [26819 10606 -447617 -2 675261 8563716 463915 416 994369130 1718 -3710 -45075246 -1808406607 30330 214669 2048 -80798029 304776 27207 755618 108172]
+:x 121113 :xs [-3721 -6111912 -932 1444339 173 -131071 -496 8192 19937]
+:x -226 :xs [266 9205293 -10993 12258709 4096 2691019 2079058 -1281 338]
+:x -268435457 :xs [29 1266]
+:x 2147483647 :xs [2891 55981610 52406 53515]
+:x 3 :xs [1217891853 -858473924 923 202 2047 2147483646 49472 2688 16 2147483647 -494391 -3153390]
+:x -6 :xs [56911 -127 4096 -852854832]
+:x -852854832 :xs [56911 -127 4096 -852854832]
+:x -852854832 :xs [56911 -127 4096 -852854832]
+
+FAIL in (fast-index-of-test) (form-init17666097679615558382.clj:6)
+expected: (= (.indexOf xs x) (fast-index-of xs x))
+  actual: (not (= 3 -1))
+
 ...
-:x 126 :xs [128]
-:x 127 :xs [128]
-:x -1 :xs [128]
-:x -64 :xs [128]
-:x -126 :xs [128]
-:x -127 :xs [128]
-:x 127 :xs [129]
+
+FAIL in (fast-index-of-test) (form-init17666097679615558382.clj:6)
+expected: (= (.indexOf xs x) (fast-index-of xs x))
+  actual: (not (= 3 -1))
+:x -852854832 :xs [56911 -127 4096 -852854832]
+:x -852854832 :xs [-127 4096 -852854832]
+:x -852854832 :xs [-127 -852854832]
+:x -852854832 :xs [-852854832]
+:x -852854832 :xs []
+:x 0 :xs [0]
+:x -426427416 :xs [-426427416]
+...
+:x 128 :xs []
+:x 128 :xs []
 :x 128 :xs [128]
 
-FAIL in (fast-index-of-test) (form-init18001555065152736569.clj:6)
+FAIL in (fast-index-of-test) (form-init17666097679615558382.clj:6)
 expected: (= (.indexOf xs x) (fast-index-of xs x))
   actual: (not (= 0 -1))
 ```
@@ -86,7 +106,9 @@ our `fast-index-of` function returned `-1`. You can see each version of `x` and
 smaller numbers and vectors to try and reproduce the problem.
 
 Rather than see *every* value, we can log just those from Hegel's *final
-phase*, where it replays the smallest failing example it found:
+phase*, where it replays the smallest failing example it found. Due to a what I
+think is a bug in Hegel-java, this runs more times than it ought to, but it's
+still helpful:
 
 ```clj
 (deftest fast-index-of-test
@@ -101,9 +123,31 @@ We've changed `prn` to `fprn` ("final prn"), which runs only in the final
 phase. Now we only have to read the output from the smallest failing test case:
 
 ```clj
+(fast-index-of-test)
+
+:x -4236 :xs [-4236 -317125]
+
+FAIL in (fast-index-of-test) (form-init17666097679615558382.clj:6)
+expected: (= (.indexOf xs x) (fast-index-of xs x))
+  actual: (not (= 0 -1))
+:x -4236 :xs [-4236 -317125]
+
+FAIL in (fast-index-of-test) (form-init17666097679615558382.clj:6)
+expected: (= (.indexOf xs x) (fast-index-of xs x))
+  actual: (not (= 0 -1))
+:x -4236 :xs [-4236 -317125]
+
+FAIL in (fast-index-of-test) (form-init17666097679615558382.clj:6)
+expected: (= (.indexOf xs x) (fast-index-of xs x))
+  actual: (not (= 0 -1))
+:x -4236 :xs [-4236 -317125]
+
+FAIL in (fast-index-of-test) (form-init17666097679615558382.clj:6)
+expected: (= (.indexOf xs x) (fast-index-of xs x))
+  actual: (not (= 0 -1))
 :x 128 :xs [128]
 
-FAIL in (fast-index-of-test) (form-init5299215160681576945.clj:6)
+FAIL in (fast-index-of-test) (form-init17666097679615558382.clj:6)
 expected: (= (.indexOf xs x) (fast-index-of xs x))
   actual: (not (= 0 -1))
 ```
@@ -124,19 +168,25 @@ questions about those bad inputs...
     (is (= (.indexOf xs x) (fast-index-of xs x)))))
 ```
 
-The `when-final` macro evaluates its body only in the final test phase, so we
-can play around without producing a zillion log lines.
+The `(when (h/final?) ...)` valuates its body only in the final test phase, so
+we can play around without producing a zillion log lines.
 
 ```clj
-:x java.lang.Long 128 :x0 java.lang.Long 128
+...
+:x java.lang.Integer 128 :x0 java.lang.Integer 128
 identical? false
 = true
+
+FAIL in (fast-index-of-test) (form-init17666097679615558382.clj:10)
+expected: (= (.indexOf xs x) (fast-index-of xs x))
+  actual: (not (= 0 -1))
+nil
 ```
 
-Aha! So these are both java.lang.Longs, and while they're *equal* (represent
-the same value) they're not *identical* (at the same memory address). Longs up
-to 127 are identical on OpenJDK, so we wouldn't have caught this bug if we
-stuck to small numbers.
+Aha! So these are both `java.lang.Integers`, and while they're *equal*
+(represent the same value) they're not *identical* (at the same memory
+address). Integers up to 127 are identical on OpenJDK, so we wouldn't have
+caught this bug if we stuck to small numbers.
 
 ## Overview
 
@@ -144,17 +194,16 @@ stuck to small numbers.
 - [`hegel.generator`](/src/hegel_clj/generator.clj) constructs generators of random values.
 - [`hegel.clojure-test`](/src/hegel_clj/clojure_test.clj) provides `clojure.test` integration.
 
-
 Your main entrypoint is generally either through a test integration namespace
 (like `hegel-clj.clojure-test/with`), or by starting a test using
 `hegel-clj.core/test!`. From there, you can generate random values using
-`hegel-clj.core`'s `let` or `draw!`. `run-test!` will hunt for values that
-cause the body to throw, and `with` will also flag any `clojure.test/is`
-failures.
+`hegel-clj.core`'s `let` or `draw!`. `hegel-clj.core/test!` will hunt for
+values that cause the body to throw an exception, and
+`hegel-clj.clojure-test/with` will also flag any `clojure.test/is` failures.
 
 ## Philosophy
 
-Hegel takes an imperative approach to testing; generated values are
+Hegel takes an imperative approach to testing. Generated values are
 deterministic (and Hegel will warn you when your tests aren't!), but the
 generators have implicit side effects---notably, each call to `draw!` mutates
 the Hegel PRNG. This is actually sort of nice: it frees you to generate values
@@ -195,13 +244,12 @@ side, generates a random value:
           n       (g/integer {:min 2 :max 64})
           ; Compute a maximum value, half the size
           max-val (long (/ n 2))
-          ; You can print for side effects if you like!
-          _       (prn :n n :max-val max-val)
+          _      (h/fprn :n n :max-val max-val)
           ; Now, make a map with n elements, whose values are up in [0, max-val]
           m       (g/map {:size n}
                          (g/integer)
                          (g/integer {:min 0, :max max-val}))]
-    (prn m)
+    (h/fprn m)
     ; Assert that the values in the map are distinct
     (assert (= (vals m) (distinct (vals m))))))
 ```
@@ -211,28 +259,33 @@ be injective for `2 < n`: there are some duplicate values in those maps. Hegel
 finds a small map with this property: `{0 0, 1 0}`.
 
 ```clj
-:n 29 :max-val 14
-{-24010 1, -108 3, -8141 9, 10999 4, -157746965 1, -6658347437399882413 12, -1895 3, -57 11, 26188 4, 119 5, 1814143433 4, 4294967296 7, -61746485611849544375328652203653776230N 7, 117 9, -13461 11, -1393526811 11, -6725207902868597187 4, -53 11, 31427 8, -2233 14, 34 5, -96 2, -113 2, 24195 2, 45 8, 7103 12, 8796093022209 6, 7182105681986522026 14, -1510709640 8}
 ...
 :n 2 :max-val 1
-{0 0, 1 1}
-:n 2 :max-val 1
 {0 0, 1 0}
-{:health-check-failure? nil,
- :final [{:n 2, :m {0 0, 1 0},:status :interesting}],
- :seed "336846547442498173212578659943701187349",
- :invalid-test-cases 7,
- :test-cases 51,
- :flaky? nil,
- :passed? false,
- :valid-test-cases 2,
- :error nil,
- :interesting-test-cases 1}
+{:passed? false,
+ :status :failed,
+ :statistics {:total 3022,
+              :valid 221,
+              :invalid 1,
+              :overrun 2537,
+              :interesting 263},
+ :health-check-failed? false,
+ :failures
+ ({:draws {"n" 2, "m" {0 0, 1 0}},
+   :exception
+   #error {
+     :cause "Assert failed: (= (vals m) (distinct (vals m)))"
+     :via
+     [{:type java.lang.AssertionError
+       :message "Assert failed: (= (vals m) (distinct (vals m)))"
+       :at [my_test$eval3058$case__3059 invoke "form-init17666097679615558382.clj" 13]}]
+     :trace
+     [[my_test$eval3058$case__3059 invoke "form-init17666097679615558382.clj" 13]
+      [clojure.lang.AFn applyToHelper "AFn.java" 154]
+      ...]}
+  :reproduce-blob "AXicY2UAAi5GIMEEoRhQKEYoDwAFcwBA"
+  :caveat nil})}
 ```
-
-If you prefer, you can explicitly generate a value from a schema at any time
-during a test case with `hegel-clj.core/gen`.
-
 
 ### Transforming Generators
 
@@ -243,15 +296,14 @@ Here we transform the `(g/integer)` generator by converting its values to
 `BigInt`s:
 
 ```clj
-(run-test! {:test-cases 5}
-  (g/let [x (g/fmap bigint (g/integer))]
-    (prn x)
-    {:status :valid}))
+(h/test! {:test-cases 5}
+  (h/let [x (g/fmap bigint (g/integer))]
+    (prn x)))
 0N
--6894N
-25626N
-28320N
-25N
+13242N
+2147483647N
+-1382N
+-167793N
 ```
 
 The `bind` generator works like `fmap`, but its function takes a value and
@@ -259,15 +311,13 @@ returns a *new* generator, which is asked to produce a value in turn. This
 generator produces square matrices between 5 and 10 elements on a side.
 
 ```clj
-(require '[hegel-clj [core :as h]
-                     [generator :as g]])
-
+(require '[clojure.pprint :refer [pprint]])
 (let [matrix (->> ; Pick a rank between 5 and 10
                   (g/integer {:min 5, :max 10})
                   ; Take that rank and produce [rank elements] pairs,
                   ; with rank^2 elements
                   (g/bind (fn [rank]
-                            (g/tuple (g/constant rank)
+                            (g/tuple (g/just rank)
                                      (g/vector {:size (* rank rank)}
                                                (g/integer {:min 0 :max 9})))))
                   ; Take those [rank elements] pairs and rearrange the flat
@@ -276,10 +326,9 @@ generator produces square matrices between 5 and 10 elements on a side.
                             (->> flat-elements
                                  (partition rank)
                                  (mapv vec)))))]
-  (run-test! {:test-cases 10}
-    (g/let [m matrix]
-      (pprint m)
-      {:status :valid})))
+  (h/test! {:test-cases 10}
+    (h/let [m matrix]
+      (pprint m))))
 
 ...
 
@@ -302,36 +351,47 @@ generator produces square matrices between 5 and 10 elements on a side.
  [1 1 4 4 4 5 1]]
 ```
 
-The generators API is built with `->>` composition in mind; schemas are usually
-placed in the final argument. Of course you could write this more plainly with
-`g/let`, but this definition of `matrix` is a composable object you can re-use
-in other generators.
+The generators API is built with `->>` composition in mind: if a generator
+takes a generator, that usually comes as the final argument. Of course you
+could write this example more plainly with `h/let`, but this definition of
+`matrix` is a composable object you can re-use in other generators.
 
-### Collections
-
-The basic collection generators can generate maps, vectors, etc. in a single
-shot. However, you might have a generator which cannot be expressed directly as
-a schema, because your code needs to make decisions about what generator
-functions to call. For instance, a sorted map where keys are never equal to
-their values:
+Sometimes a generator would be awkward to write with `bind` or `fmap`---for
+example, if you want to draw several random values which depend on each other.
+For this we have `composite`: a generator which evaluates arbitrary code.
 
 ```clj
-(require '[hegel-clj [core :as h]
-                     [generator :as g]])
-(h/sample 5
-  (g/collect [m (sorted-map) {:min-size 1, :max-size 10}]
-    (g/let [k (g/integer {:min 0 :max 10})
-            v (g/integer {:min 0 :max 10})]
-      (if (= k v)
-        :hegel-clj/reject
-        (assoc m k v)))))
-[{6 2} {6 0, 7 6, 10 2} {0 10, 1 2, 6 3} {2 5, 3 7, 4 0, 5 3, 8 9, 10 8} {1 4, 7 5}]
+(h/sample 2
+  (g/composite
+    (h/let [name      (g/string)
+            cat-count (g/integer 0 2)
+            dog-count (+ cat-count (h/draw! (g/integer 0 2)))
+            cats      (g/vector {:size cat-count, :unique? true} (g/string))
+            dogs      (g/vector {:size dog-count, :unique? true} (g/string))]
+      {:name name
+       :pet-count (+ cat-count dog-count)
+       :pets {:cats cats, :dogs dogs}})))
+
+[{:name "", :pet-count 0, :pets {:cats [], :dogs []}}
+ {:name "", :pet-count 4, :pets {:cats ["" "0..0"], :dogs ["í𔖪q𔖪" "TRUE"]}}]
 ```
 
-`collect` produces a collection by starting with an initial value (here,
-`(sorted-map)`, binding it to `m`, and then evaluating the body several times,
-each time returning either an expanded collection (e.g. with some elements
-added) or choosing to reject the generated elements with `:hegel-clj/reject`.
+For recursive generators, Hegel uses a stateful approach. Create a placeholder
+generator with `(g/deferred)`, use it to construct another generator, then fill
+in the value of `deferred` later:
+
+```clj
+(let [leaf (g/integer 0 9)
+      tree (g/deferred)]
+  (g/set-deferred! tree (g/one-of [leaf (g/vector tree)]))
+  (mapv prn (h/sample 5 tree)))
+
+0
+[[1] 8 [2 []] 5 [] [[4 6 []]]]
+[[1] 2]
+3
+0
+```
 
 ## We Have Generative Tests At Home
 
@@ -372,18 +432,12 @@ different elements--likely without `42`.
 Hegel is able to shrink this example to a much more reasonable `[42]`:
 
 ```clj
-(require '[hegel-clj [core :as h]
-                     [generator :as hg]])
-(-> (h/run-test! {:test-cases 1000
-                  :seed       1777986545686}
-                 (hg/let [size (hg/integer {:min 0, :max 128})
-                          xs   (hg/vector {:size size} (hg/integer))]
-                   {:xs     xs
-                    :status (if (not-any? #{42} xs)
-                              :valid
-                              :interesting)}))
-    :final first :xs)
-
+(-> (h/test! {:test-cases 1000
+              :seed       1777986545686}
+      (h/let [size (g/integer {:min 0, :max 128})
+              xs   (g/vector {:size size} (g/integer))]
+        (assert (not-any? #{42} xs))))
+    :failures first :draws (get "xs"))
 [42]
 ```
 
