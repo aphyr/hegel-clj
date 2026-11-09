@@ -1,7 +1,7 @@
 # Hegel-clj
 
 [![Clojars Project](https://img.shields.io/clojars/v/com.aphyr/hegel-clj.svg?include_prereleases)](https://clojars.org/com.aphyr/hegel-clj)
-[![cljdoc badge](https://cljdoc.org/badge/com.aphyr/hegel-clj)](https://cljdoc.org/d/com.aphyr/hegel-cljp)
+[![cljdoc badge](https://cljdoc.org/badge/com.aphyr/hegel-clj)](https://cljdoc.org/d/com.aphyr/hegel-clj)
 
 This library provides Clojure bindings for the [Hegel property-based testing
 library](https://hegel.dev/). Like
