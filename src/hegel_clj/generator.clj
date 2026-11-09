@@ -86,7 +86,8 @@
     (fn with-errors [test-case]
       (try (f test-case)
            (catch Throwable t
-             (warn t "Composite generator threw!"))))))
+             (warn t "Composite generator threw!")
+             (throw t))))))
 
 (defmacro composite
   "Wrapper for composite-fn. Takes a body which returns a value, presumably
