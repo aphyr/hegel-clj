@@ -234,11 +234,8 @@
    (.draw *test-case* gen))
   ([label gen]
    (draw! *test-case* label gen))
-  ([^TestCase test-case, label, ^Generator gen]
-   (.draw test-case gen
-          (if (string? label)
-            label
-            (pr-str label)))))
+  ([^TestCase test-case, ^String label, ^Generator gen]
+   (.draw test-case gen label)))
 
 (defn ^long label
   "Takes a keyword and returns a long label for a span. These tell Hegel the

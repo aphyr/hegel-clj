@@ -81,7 +81,13 @@
 
 (deftest boolean-test
   (with {:test-cases 5} [g (g/boolean)]
-    (is (boolean? g))))
+    (is (boolean? g)))
+  (is (= {true 34
+          false 966}
+         (frequencies
+           (h/sample {:test-cases 1000
+                      :seed 28}
+                     (g/boolean 3/100))))))
 
 (deftest integer-test
   (with {:test-cases 5} []

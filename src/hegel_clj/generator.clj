@@ -125,10 +125,17 @@
   [xs]
   (Generators/sampledFrom xs))
 
+(deftype BooleanGenerator [^double p]
+  Generator
+  (doDraw [this test-case]
+    (.generateBoolean test-case p)))
+
 (defn boolean
-  "Generates a boolean."
-  []
-  (Generators/booleans))
+  "Generates a boolean, optionally with the given probability."
+  ([]
+   (Generators/booleans))
+  ([p]
+   (BooleanGenerator. (c/double p))))
 
 (defn integer
   "Generates a 32-bit Integer. Options:
